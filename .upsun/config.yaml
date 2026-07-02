@@ -1,0 +1,86 @@
+# Upsun configuration for Pulse.
+# Three runtime surfaces: web (static React build), api (FastAPI), and the
+# queue worker (same image as api, different start command).
+# Every branch gets a preview environment with its own PostgreSQL and Redis.
+
+applications:
+  api:
+    type: "python:3.12"
+    source:
+      root: apps/api
+
+    relationships:
+      postgresql:
+      redis:
+
+    dependencies:
+      python3:
+        uv: "*"
+
+    hooks:
+      build: |
+        set -e
+        export UV_CACHE_DIR="$PLATFORM_CACHE_DIR/uv"
+        uv sync --frozen --no-dev
+      deploy: |
+        set -e
+        .venv/bin/alembic upgrade head
+
+    web:
+      commands:
+        start: ".venv/bin/uvicorn pulse.main:app --host 0.0.0.0 --port $PORT"
+
+    workers:
+      queue:
+        commands:
+          start: ".venv/bin/arq pulse.worker.WorkerSettings"
+
+    # Phase 3: enable the daily dashboard rollup.
+    # crons:
+    #   daily-rollup:
+    #     spec: "H 3 * * *"
+    #     commands:
+    #       start: ".venv/bin/python -m pulse.jobs.enqueue_rollup"
+
+  web:
+    type: "nodejs:20"
+    source:
+      root: apps/web
+
+    build:
+      flavor: none
+
+    hooks:
+      build: |
+        set -e
+        npm ci
+        npm run build
+
+    web:
+      commands:
+        start: sleep infinity
+      locations:
+        "/":
+          root: "dist"
+          index: ["index.html"]
+          passthru: "/index.html"
+          expires: 5m
+          rules:
+            \.(js|css|svg|woff2?)$:
+              expires: 1y
+
+services:
+  postgresql:
+    type: "postgresql:17"
+  redis:
+    type: "redis-persistent:7.2"
+
+routes:
+  "https://{default}/":
+    type: upstream
+    upstream: "web:http"
+  "https://{default}/api":
+    type: upstream
+    upstream: "api:http"
+    cache:
+      enabled: false
