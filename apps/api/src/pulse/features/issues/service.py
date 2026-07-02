@@ -54,7 +54,9 @@ def create_issue(session: Session, data: IssueCreate) -> Issue:
 
 def update_issue(session: Session, issue_id: uuid.UUID, data: IssueUpdate) -> Issue:
     issue = get_issue(session, issue_id)
-    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    # exclude_unset only: explicit nulls must be applied (they clear nullable
+    # fields); the schema already rejects null for non-nullable fields.
+    changes = data.model_dump(exclude_unset=True)
     for key, value in changes.items():
         setattr(issue, key, value)
     issue.updated_at = utcnow()

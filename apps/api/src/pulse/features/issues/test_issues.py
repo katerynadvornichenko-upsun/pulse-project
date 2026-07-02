@@ -116,6 +116,35 @@ def test_crud_over_http(client: TestClient) -> None:
     assert client.get(f"/api/issues/{issue['id']}").status_code == 404
 
 
+def test_patch_null_clears_due_date(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    issue = client.post(
+        "/api/issues",
+        json={
+            "title": "Dated",
+            "project_id": project_id,
+            "due_date": "2026-07-10T12:00:00Z",
+        },
+    ).json()
+    assert issue["due_date"] is not None
+
+    resp = client.patch(f"/api/issues/{issue['id']}", json={"due_date": None})
+    assert resp.status_code == 200
+    assert resp.json()["due_date"] is None
+
+
+def test_patch_null_rejected_for_non_nullable_fields(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    issue = client.post(
+        "/api/issues", json={"title": "Solid", "project_id": project_id}
+    ).json()
+
+    resp = client.patch(f"/api/issues/{issue['id']}", json={"title": None})
+    assert resp.status_code == 422
+    # And the value is untouched.
+    assert client.get(f"/api/issues/{issue['id']}").json()["title"] == "Solid"
+
+
 def test_create_against_missing_project_is_404(client: TestClient) -> None:
     resp = client.post(
         "/api/issues", json={"title": "Orphan", "project_id": str(uuid.uuid4())}
