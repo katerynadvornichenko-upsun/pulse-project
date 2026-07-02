@@ -11,6 +11,11 @@ class ThingCreate(BaseModel):
 
 
 class ThingUpdate(BaseModel):
+    """PATCH semantics (see AGENTS.md): omitted fields stay unchanged, explicit
+    null is only accepted for nullable fields, where it clears the value.
+    Reject null on non-nullable fields with a field_validator, and dump with
+    model_dump(exclude_unset=True) in the service."""
+
     name: str | None = Field(default=None, min_length=1, max_length=200)
 
 

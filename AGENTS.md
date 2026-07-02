@@ -33,6 +33,10 @@ CI runs exactly these checks.
 3. Routers are thin. Business logic goes in `service.py`. Services take a
    `Session` argument and never open their own.
 4. Raise `pulse.lib.errors.NotFoundError` for missing entities. It maps to 404.
+   PATCH semantics are uniform: omitted fields stay unchanged, explicit null
+   clears nullable fields, and explicit null on a non-nullable field is a 422
+   (enforced by a `field_validator` in the update schema; services dump with
+   `model_dump(exclude_unset=True)`).
 5. Record an `ActivityEvent` for every create, update, and delete so the
    dashboard timeline stays complete.
 6. Register the new router in `apps/api/src/pulse/main.py`. All routes are

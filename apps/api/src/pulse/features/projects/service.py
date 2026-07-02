@@ -40,7 +40,9 @@ def create_project(session: Session, data: ProjectCreate) -> Project:
 
 def update_project(session: Session, project_id: uuid.UUID, data: ProjectUpdate) -> Project:
     project = get_project(session, project_id)
-    changes = data.model_dump(exclude_unset=True, exclude_none=True)
+    # exclude_unset only: see AGENTS.md, PATCH semantics. The schema rejects
+    # null for non-nullable fields.
+    changes = data.model_dump(exclude_unset=True)
     for key, value in changes.items():
         setattr(project, key, value)
     project.updated_at = utcnow()

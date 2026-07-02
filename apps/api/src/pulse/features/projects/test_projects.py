@@ -56,3 +56,9 @@ def test_crud_over_http(client: TestClient) -> None:
 def test_validation_rejects_empty_name(client: TestClient) -> None:
     resp = client.post("/api/projects", json={"name": ""})
     assert resp.status_code == 422
+
+
+def test_patch_null_rejected(client: TestClient) -> None:
+    project = client.post("/api/projects", json={"name": "Solid"}).json()
+    resp = client.patch(f"/api/projects/{project['id']}", json={"name": None})
+    assert resp.status_code == 422
