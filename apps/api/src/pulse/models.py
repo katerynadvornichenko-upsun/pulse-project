@@ -86,8 +86,9 @@ class Issue(SQLModel, table=True):
     due_date: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
-    # Set when the issue enters done/cancelled, cleared when it reopens.
-    # Managed exclusively by the status endpoint (features/issues).
+    # Non-null exactly when status is done/cancelled. Kept in sync by the
+    # issues service (on create and via the status endpoint); PATCH cannot
+    # touch status or closed_at.
     closed_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )

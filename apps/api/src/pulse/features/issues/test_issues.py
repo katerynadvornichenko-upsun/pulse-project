@@ -131,6 +131,31 @@ def test_close_sets_closed_at_and_reopen_clears_it(
     assert reopened.status == IssueStatus.TODO
 
 
+def test_create_in_closed_status_sets_closed_at(
+    session: Session, project: Project
+) -> None:
+    issue = make_issue(session, project, status=IssueStatus.DONE)
+    assert issue.closed_at is not None
+
+    open_issue = make_issue(session, project, status=IssueStatus.TODO)
+    assert open_issue.closed_at is None
+
+
+def test_status_change_same_status_is_noop(session: Session, project: Project) -> None:
+    issue = make_issue(session, project, status=IssueStatus.TODO)
+    closed = service.change_status(session, issue.id, IssueStatus.DONE)
+    first_closed_at = closed.closed_at
+    first_updated_at = closed.updated_at
+
+    again = service.change_status(session, issue.id, IssueStatus.DONE)
+    assert again.closed_at == first_closed_at
+    assert again.updated_at == first_updated_at
+    events = session.exec(
+        select(ActivityEvent).where(ActivityEvent.action == "status_changed")
+    ).all()
+    assert len(events) == 1
+
+
 def test_status_change_records_transition_message(
     session: Session, project: Project
 ) -> None:
