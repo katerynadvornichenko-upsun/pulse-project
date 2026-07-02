@@ -116,6 +116,63 @@ def test_crud_over_http(client: TestClient) -> None:
     assert client.get(f"/api/issues/{issue['id']}").status_code == 404
 
 
+def test_close_sets_closed_at_and_reopen_clears_it(
+    session: Session, project: Project
+) -> None:
+    issue = make_issue(session, project, status=IssueStatus.IN_PROGRESS)
+    assert issue.closed_at is None
+
+    closed = service.change_status(session, issue.id, IssueStatus.DONE)
+    assert closed.closed_at is not None
+    assert closed.status == IssueStatus.DONE
+
+    reopened = service.change_status(session, issue.id, IssueStatus.TODO)
+    assert reopened.closed_at is None
+    assert reopened.status == IssueStatus.TODO
+
+
+def test_status_change_records_transition_message(
+    session: Session, project: Project
+) -> None:
+    issue = make_issue(session, project, title="Fix login", status=IssueStatus.TODO)
+    service.change_status(session, issue.id, IssueStatus.IN_PROGRESS)
+    event = session.exec(
+        select(ActivityEvent).where(ActivityEvent.action == "status_changed")
+    ).one()
+    assert event.message == "Issue 'Fix login' moved from todo to in_progress"
+
+
+def test_status_change_missing_issue_raises(session: Session) -> None:
+    with pytest.raises(NotFoundError):
+        service.change_status(session, uuid.uuid4(), IssueStatus.DONE)
+
+
+def test_status_endpoint_over_http(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    issue = client.post(
+        "/api/issues", json={"title": "Ship it", "project_id": project_id}
+    ).json()
+
+    resp = client.post(f"/api/issues/{issue['id']}/status", json={"status": "done"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "done"
+    assert resp.json()["closed_at"] is not None
+
+    resp = client.post(f"/api/issues/{issue['id']}/status", json={"status": "nonsense"})
+    assert resp.status_code == 422
+
+
+def test_patch_no_longer_accepts_status(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    issue = client.post(
+        "/api/issues", json={"title": "Stubborn", "project_id": project_id}
+    ).json()
+
+    resp = client.patch(f"/api/issues/{issue['id']}", json={"status": "done"})
+    assert resp.status_code == 422
+    assert client.get(f"/api/issues/{issue['id']}").json()["status"] == "backlog"
+
+
 def test_patch_null_clears_due_date(client: TestClient) -> None:
     project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
     issue = client.post(

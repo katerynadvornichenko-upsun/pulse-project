@@ -67,6 +67,29 @@ def update_issue(session: Session, issue_id: uuid.UUID, data: IssueUpdate) -> Is
     return issue
 
 
+CLOSED_STATUSES = {IssueStatus.DONE, IssueStatus.CANCELLED}
+
+
+def change_status(session: Session, issue_id: uuid.UUID, new_status: IssueStatus) -> Issue:
+    issue = get_issue(session, issue_id)
+    old_status = issue.status
+    issue.status = new_status
+    issue.closed_at = utcnow() if new_status in CLOSED_STATUSES else None
+    issue.updated_at = utcnow()
+    session.add(issue)
+    session.add(
+        ActivityEvent(
+            entity_type="issue",
+            entity_id=issue.id,
+            action="status_changed",
+            message=f"Issue '{issue.title}' moved from {old_status.value} to {new_status.value}",
+        )
+    )
+    session.commit()
+    session.refresh(issue)
+    return issue
+
+
 def delete_issue(session: Session, issue_id: uuid.UUID) -> None:
     issue = get_issue(session, issue_id)
     _record(session, issue, "deleted")

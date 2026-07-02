@@ -3,7 +3,12 @@ import uuid
 from fastapi import APIRouter, status
 
 from pulse.features.issues import service
-from pulse.features.issues.schemas import IssueCreate, IssueRead, IssueUpdate
+from pulse.features.issues.schemas import (
+    IssueCreate,
+    IssueRead,
+    IssueStatusChange,
+    IssueUpdate,
+)
 from pulse.lib.db import SessionDep
 from pulse.models import IssuePriority, IssueStatus
 
@@ -34,6 +39,13 @@ def get_issue(issue_id: uuid.UUID, session: SessionDep) -> IssueRead:
 @router.patch("/{issue_id}", response_model=IssueRead)
 def update_issue(issue_id: uuid.UUID, data: IssueUpdate, session: SessionDep) -> IssueRead:
     return IssueRead.model_validate(service.update_issue(session, issue_id, data))
+
+
+@router.post("/{issue_id}/status", response_model=IssueRead)
+def change_status(
+    issue_id: uuid.UUID, data: IssueStatusChange, session: SessionDep
+) -> IssueRead:
+    return IssueRead.model_validate(service.change_status(session, issue_id, data.status))
 
 
 @router.delete("/{issue_id}", status_code=status.HTTP_204_NO_CONTENT)

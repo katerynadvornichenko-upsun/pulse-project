@@ -86,6 +86,11 @@ class Issue(SQLModel, table=True):
     due_date: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    # Set when the issue enters done/cancelled, cleared when it reopens.
+    # Managed exclusively by the status endpoint (features/issues).
+    closed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     project_id: uuid.UUID = Field(foreign_key="projects.id", index=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
     updated_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
