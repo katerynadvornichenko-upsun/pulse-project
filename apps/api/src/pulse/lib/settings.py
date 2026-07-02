@@ -6,8 +6,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """App configuration, read from environment variables.
 
-    On Upsun, DATABASE_URL and REDIS_URL are generated automatically from the
-    `database` and `redis` relationships in .upsun/config.yaml.
+    On Upsun, DATABASE_URL and REDIS_URL are built in apps/api/.environment
+    from the service variables of the `postgresql` and `redis` relationships
+    defined in .upsun/config.yaml.
     """
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

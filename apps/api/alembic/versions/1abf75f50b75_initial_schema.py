@@ -99,4 +99,10 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_activity_events_entity_type'), table_name='activity_events')
     op.drop_index(op.f('ix_activity_events_entity_id'), table_name='activity_events')
     op.drop_table('activity_events')
+    # Dropping the issues table does not drop the ENUM types Postgres created
+    # implicitly in upgrade(). Drop them explicitly so downgrade + upgrade
+    # works. checkfirst makes this a no-op on SQLite, which has no enum types.
+    bind = op.get_bind()
+    sa.Enum(name='issuestatus').drop(bind, checkfirst=True)
+    sa.Enum(name='issuepriority').drop(bind, checkfirst=True)
     # ### end Alembic commands ###
