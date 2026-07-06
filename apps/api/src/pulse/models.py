@@ -86,6 +86,12 @@ class Issue(SQLModel, table=True):
     due_date: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    # Non-null exactly when status is done/cancelled. Kept in sync by the
+    # issues service (on create and via the status endpoint); PATCH cannot
+    # touch status or closed_at.
+    closed_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
     project_id: uuid.UUID = Field(foreign_key="projects.id", index=True, ondelete="CASCADE")
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
     updated_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())

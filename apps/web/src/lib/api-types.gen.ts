@@ -95,6 +95,23 @@ export interface paths {
         patch: operations["update_issue_api_issues__issue_id__patch"];
         trace?: never;
     };
+    "/api/issues/{issue_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Status */
+        post: operations["change_status_api_issues__issue_id__status_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -145,6 +162,8 @@ export interface components {
             priority: components["schemas"]["IssuePriority"];
             /** Due Date */
             due_date: string | null;
+            /** Closed At */
+            closed_at: string | null;
             /**
              * Project Id
              * Format: uuid
@@ -166,13 +185,24 @@ export interface components {
          * @enum {string}
          */
         IssueStatus: "backlog" | "todo" | "in_progress" | "done" | "cancelled";
-        /** IssueUpdate */
+        /** IssueStatusChange */
+        IssueStatusChange: {
+            status: components["schemas"]["IssueStatus"];
+        };
+        /**
+         * IssueUpdate
+         * @description PATCH body. Omitted fields stay unchanged. An explicit null is only
+         *     accepted for nullable fields (due_date, where it clears the value).
+         *
+         *     `status` is deliberately absent and, like any unknown field, rejected via
+         *     extra="forbid": status changes go through POST /api/issues/{id}/status so
+         *     closed_at stays consistent.
+         */
         IssueUpdate: {
             /** Title */
             title?: string | null;
             /** Description */
             description?: string | null;
-            status?: components["schemas"]["IssueStatus"] | null;
             priority?: components["schemas"]["IssuePriority"] | null;
             /** Due Date */
             due_date?: string | null;
@@ -209,7 +239,10 @@ export interface components {
              */
             updated_at: string;
         };
-        /** ProjectUpdate */
+        /**
+         * ProjectUpdate
+         * @description PATCH body. Omitted fields stay unchanged. No field accepts null.
+         */
         ProjectUpdate: {
             /** Name */
             name?: string | null;
@@ -546,6 +579,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["IssueUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    change_status_api_issues__issue_id__status_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                issue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueStatusChange"];
             };
         };
         responses: {

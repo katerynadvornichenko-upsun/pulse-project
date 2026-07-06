@@ -6,6 +6,8 @@ from pulse.features.issues.schemas import IssueCreate, IssueUpdate
 from pulse.lib.errors import NotFoundError
 from pulse.models import ActivityEvent, Issue, IssuePriority, IssueStatus, Project, utcnow
 
+CLOSED_STATUSES = {IssueStatus.DONE, IssueStatus.CANCELLED}
+
 
 def _record(session: Session, issue: Issue, action: str) -> None:
     session.add(
@@ -45,6 +47,10 @@ def create_issue(session: Session, data: IssueCreate) -> Issue:
     if session.get(Project, data.project_id) is None:
         raise NotFoundError("Project", data.project_id)
     issue = Issue(**data.model_dump())
+    # Keep the invariant: closed_at is non-null exactly when status is closed,
+    # including for issues created directly in a closed status.
+    if issue.status in CLOSED_STATUSES:
+        issue.closed_at = utcnow()
     session.add(issue)
     _record(session, issue, "created")
     session.commit()
@@ -62,6 +68,30 @@ def update_issue(session: Session, issue_id: uuid.UUID, data: IssueUpdate) -> Is
     issue.updated_at = utcnow()
     session.add(issue)
     _record(session, issue, "updated")
+    session.commit()
+    session.refresh(issue)
+    return issue
+
+
+def change_status(session: Session, issue_id: uuid.UUID, new_status: IssueStatus) -> Issue:
+    issue = get_issue(session, issue_id)
+    old_status = issue.status
+    if new_status == old_status:
+        # Idempotent no-op: don't move closed_at forward, bump updated_at,
+        # or pollute the timeline with "moved from done to done".
+        return issue
+    issue.status = new_status
+    issue.closed_at = utcnow() if new_status in CLOSED_STATUSES else None
+    issue.updated_at = utcnow()
+    session.add(issue)
+    session.add(
+        ActivityEvent(
+            entity_type="issue",
+            entity_id=issue.id,
+            action="status_changed",
+            message=f"Issue '{issue.title}' moved from {old_status.value} to {new_status.value}",
+        )
+    )
     session.commit()
     session.refresh(issue)
     return issue
