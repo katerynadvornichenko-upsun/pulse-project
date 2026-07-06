@@ -86,7 +86,9 @@ by hand. CI fails typecheck if the frontend uses endpoints that do not exist.
   tolerate slight staleness (dashboard aggregation, reporting, background
   jobs). CRUD endpoints keep using `SessionDep` so clients read their own
   writes. Without a configured replica, `ReadSessionDep` falls back to the
-  primary, so local dev needs no extra setup.
+  primary, so local dev needs no extra setup. The replica service itself is
+  currently commented out in `.upsun/config.yaml` (the platform does not yet
+  accept the `postgres-replica` type); see the note there before re-enabling.
 - Route paths must keep the `/api` prefix. The Vite dev proxy and the Upsun
   router both depend on it.
 - `apps/api/uv.lock` and `apps/web/package-lock.json` are the source of truth
