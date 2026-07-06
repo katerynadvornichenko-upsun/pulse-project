@@ -11,6 +11,15 @@ applications:
 
     relationships:
       postgresql:
+        service: postgresql
+        endpoint: postgresql
+      # Read-only replica for read-heavy work (dashboard aggregation,
+      # reporting jobs). Replication is asynchronous, so only use it for
+      # reads that tolerate a few milliseconds of staleness. CRUD reads
+      # stay on the primary to preserve read-your-writes.
+      postgresql-replica:
+        service: postgresql-replica
+        endpoint: postgresql
       redis:
 
     dependencies:
@@ -72,6 +81,30 @@ applications:
 services:
   postgresql:
     type: "postgresql:17"
+    configuration:
+      databases:
+        - main
+      endpoints:
+        postgresql:
+          default_database: main
+          privileges:
+            main: admin
+        # Special endpoint name; the replica service streams through it.
+        replicator:
+          replication: true
+  # Read-only replica streaming from the primary. Must run the same
+  # PostgreSQL version as the primary. Note: the replica disk starts at
+  # 256MB and must be adjusted manually to match the primary's disk size
+  # (upsun resources:set). postgresql-replica services also support
+  # horizontal autoscaling (Console → Configure resources, or the CLI).
+  postgresql-replica:
+    type: "postgresql-replica:17"
+    configuration:
+      endpoints:
+        postgresql:
+          default_database: main
+    relationships:
+      primary: postgresql:replicator  # The name `primary` is required.
   redis:
     type: "redis-persistent:7.2"
 
