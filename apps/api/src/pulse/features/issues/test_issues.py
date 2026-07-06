@@ -227,6 +227,77 @@ def test_patch_null_rejected_for_non_nullable_fields(client: TestClient) -> None
     assert client.get(f"/api/issues/{issue['id']}").json()["title"] == "Solid"
 
 
+def test_replace_issue_labels(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    issue = client.post(
+        "/api/issues", json={"title": "Tag me", "project_id": project_id}
+    ).json()
+    bug = client.post("/api/labels", json={"name": "bug"}).json()
+    api = client.post("/api/labels", json={"name": "api"}).json()
+
+    resp = client.put(
+        f"/api/issues/{issue['id']}/labels",
+        json={"label_ids": [bug["id"], api["id"]]},
+    )
+    assert resp.status_code == 200
+    assert sorted(label["name"] for label in resp.json()["labels"]) == ["api", "bug"]
+
+    # Replacement, not addition.
+    resp = client.put(
+        f"/api/issues/{issue['id']}/labels", json={"label_ids": [bug["id"]]}
+    )
+    assert [label["name"] for label in resp.json()["labels"]] == ["bug"]
+
+    # Duplicate ids in the body are deduplicated, not a 500.
+    resp = client.put(
+        f"/api/issues/{issue['id']}/labels",
+        json={"label_ids": [bug["id"], bug["id"]]},
+    )
+    assert resp.status_code == 200
+    assert [label["name"] for label in resp.json()["labels"]] == ["bug"]
+
+    # Empty list clears.
+    resp = client.put(f"/api/issues/{issue['id']}/labels", json={"label_ids": []})
+    assert resp.json()["labels"] == []
+
+    # Unknown label id is a 404.
+    resp = client.put(
+        f"/api/issues/{issue['id']}/labels", json={"label_ids": [str(uuid.uuid4())]}
+    )
+    assert resp.status_code == 404
+
+
+def test_filter_issues_by_label(client: TestClient) -> None:
+    project_id = client.post("/api/projects", json={"name": "P"}).json()["id"]
+    tagged = client.post(
+        "/api/issues", json={"title": "Tagged", "project_id": project_id}
+    ).json()
+    client.post("/api/issues", json={"title": "Plain", "project_id": project_id})
+    bug = client.post("/api/labels", json={"name": "bug"}).json()
+    client.put(f"/api/issues/{tagged['id']}/labels", json={"label_ids": [bug["id"]]})
+
+    resp = client.get("/api/issues", params={"label": bug["id"]})
+    assert resp.status_code == 200
+    assert [issue["title"] for issue in resp.json()] == ["Tagged"]
+
+
+def test_replace_labels_records_activity_event(
+    session: Session, project: Project
+) -> None:
+    from pulse.features.issues.schemas import IssueLabelsReplace
+    from pulse.features.labels.schemas import LabelCreate
+    from pulse.features.labels.service import create_label
+
+    issue = make_issue(session, project, title="Tag me")
+    bug = create_label(session, LabelCreate(name="bug"))
+
+    service.replace_issue_labels(session, issue.id, IssueLabelsReplace(label_ids=[bug.id]))
+    event = session.exec(
+        select(ActivityEvent).where(ActivityEvent.action == "labels_changed")
+    ).one()
+    assert event.message == "Issue 'Tag me' labels set to: bug"
+
+
 def test_create_against_missing_project_is_404(client: TestClient) -> None:
     resp = client.post(
         "/api/issues", json={"title": "Orphan", "project_id": str(uuid.uuid4())}

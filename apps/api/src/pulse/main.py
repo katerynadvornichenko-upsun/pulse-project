@@ -2,6 +2,7 @@ from fastapi import APIRouter, FastAPI
 
 from pulse import __version__
 from pulse.features.issues.router import router as issues_router
+from pulse.features.labels.router import router as labels_router
 from pulse.features.projects.router import router as projects_router
 from pulse.lib.errors import register_error_handlers
 
@@ -23,6 +24,7 @@ def create_app() -> FastAPI:
 
     api.include_router(projects_router)
     api.include_router(issues_router)
+    api.include_router(labels_router)
     app.include_router(api)
     return app
 

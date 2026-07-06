@@ -2,9 +2,18 @@ import uuid
 
 from sqlmodel import Session, col, select
 
-from pulse.features.issues.schemas import IssueCreate, IssueUpdate
+from pulse.features.issues.schemas import IssueCreate, IssueLabelsReplace, IssueUpdate
+from pulse.features.labels.service import get_label
 from pulse.lib.errors import NotFoundError
-from pulse.models import ActivityEvent, Issue, IssuePriority, IssueStatus, Project, utcnow
+from pulse.models import (
+    ActivityEvent,
+    Issue,
+    IssueLabel,
+    IssuePriority,
+    IssueStatus,
+    Project,
+    utcnow,
+)
 
 CLOSED_STATUSES = {IssueStatus.DONE, IssueStatus.CANCELLED}
 
@@ -25,6 +34,7 @@ def list_issues(
     project_id: uuid.UUID | None = None,
     status: IssueStatus | None = None,
     priority: IssuePriority | None = None,
+    label_id: uuid.UUID | None = None,
 ) -> list[Issue]:
     query = select(Issue).order_by(col(Issue.created_at))
     if project_id is not None:
@@ -33,6 +43,8 @@ def list_issues(
         query = query.where(Issue.status == status)
     if priority is not None:
         query = query.where(Issue.priority == priority)
+    if label_id is not None:
+        query = query.join(IssueLabel).where(IssueLabel.label_id == label_id)
     return list(session.exec(query).all())
 
 
@@ -90,6 +102,32 @@ def change_status(session: Session, issue_id: uuid.UUID, new_status: IssueStatus
             entity_id=issue.id,
             action="status_changed",
             message=f"Issue '{issue.title}' moved from {old_status.value} to {new_status.value}",
+        )
+    )
+    session.commit()
+    session.refresh(issue)
+    return issue
+
+
+def replace_issue_labels(
+    session: Session, issue_id: uuid.UUID, data: IssueLabelsReplace
+) -> Issue:
+    issue = get_issue(session, issue_id)
+    # Deduplicate while preserving order: a repeated id would otherwise
+    # violate the issue_labels composite primary key on commit.
+    unique_ids = list(dict.fromkeys(data.label_ids))
+    labels = [get_label(session, label_id) for label_id in unique_ids]
+
+    issue.labels = labels
+    issue.updated_at = utcnow()
+    session.add(issue)
+    names = ", ".join(label.name for label in labels) or "none"
+    session.add(
+        ActivityEvent(
+            entity_type="issue",
+            entity_id=issue.id,
+            action="labels_changed",
+            message=f"Issue '{issue.title}' labels set to: {names}",
         )
     )
     session.commit()
