@@ -12,6 +12,7 @@ htmlcov/
 node_modules/
 dist/
 *.local
+.vite/
 
 # Env
 .env
