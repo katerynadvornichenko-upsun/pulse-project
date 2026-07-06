@@ -112,6 +112,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/issues/{issue_id}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace Issue Labels */
+        put: operations["replace_issue_labels_api_issues__issue_id__labels_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Labels */
+        get: operations["list_labels_api_labels_get"];
+        put?: never;
+        /** Create Label */
+        post: operations["create_label_api_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/labels/{label_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Label */
+        delete: operations["delete_label_api_labels__label_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Label */
+        patch: operations["update_label_api_labels__label_id__patch"];
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -143,6 +196,16 @@ export interface components {
             project_id: string;
         };
         /**
+         * IssueLabelsReplace
+         * @description Body of PUT /api/issues/{id}/labels: the full replacement set.
+         *
+         *     Duplicate ids are tolerated and deduplicated.
+         */
+        IssueLabelsReplace: {
+            /** Label Ids */
+            label_ids: string[];
+        };
+        /**
          * IssuePriority
          * @enum {string}
          */
@@ -169,6 +232,11 @@ export interface components {
              * Format: uuid
              */
             project_id: string;
+            /**
+             * Labels
+             * @default []
+             */
+            labels: components["schemas"]["LabelRead"][];
             /**
              * Created At
              * Format: date-time
@@ -206,6 +274,38 @@ export interface components {
             priority?: components["schemas"]["IssuePriority"] | null;
             /** Due Date */
             due_date?: string | null;
+        };
+        /** LabelCreate */
+        LabelCreate: {
+            /** Name */
+            name: string;
+            /**
+             * Color
+             * @default #808080
+             */
+            color: string;
+        };
+        /** LabelRead */
+        LabelRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+        };
+        /**
+         * LabelUpdate
+         * @description PATCH body. Omitted fields stay unchanged. No field accepts null.
+         */
+        LabelUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Color */
+            color?: string | null;
         };
         /** ProjectCreate */
         ProjectCreate: {
@@ -447,6 +547,7 @@ export interface operations {
                 project_id?: string | null;
                 status?: components["schemas"]["IssueStatus"] | null;
                 priority?: components["schemas"]["IssuePriority"] | null;
+                label?: string | null;
             };
             header?: never;
             path?: never;
@@ -624,6 +725,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    replace_issue_labels_api_issues__issue_id__labels_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                issue_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IssueLabelsReplace"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IssueRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_labels_api_labels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabelRead"][];
+                };
+            };
+        };
+    };
+    create_label_api_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabelRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_label_api_labels__label_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                label_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_label_api_labels__label_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                label_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabelRead"];
                 };
             };
             /** @description Validation Error */

@@ -78,9 +78,15 @@ by hand. CI fails typecheck if the frontend uses endpoints that do not exist.
 ## Things that will break if you improvise
 
 - Renaming an Upsun service in `.upsun/config.yaml` destroys its data.
-- `apps/api/.environment` maps Upsun relationship variables to `DATABASE_URL`
-  and `REDIS_URL`. The app reads only those two variables via
-  `pulse.lib.settings`.
+- `apps/api/.environment` maps Upsun relationship variables to `DATABASE_URL`,
+  `DATABASE_REPLICA_URL`, and `REDIS_URL`. The app reads only those variables
+  via `pulse.lib.settings`.
+- The PostgreSQL replica is read-only and replication is asynchronous. Use
+  `ReadSessionDep` from `apps/api/src/pulse/lib/db.py` only for reads that
+  tolerate slight staleness (dashboard aggregation, reporting, background
+  jobs). CRUD endpoints keep using `SessionDep` so clients read their own
+  writes. Without a configured replica, `ReadSessionDep` falls back to the
+  primary, so local dev needs no extra setup.
 - Route paths must keep the `/api` prefix. The Vite dev proxy and the Upsun
   router both depend on it.
 - `apps/api/uv.lock` and `apps/web/package-lock.json` are the source of truth

@@ -3,6 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from pulse.features.labels.schemas import LabelRead
 from pulse.models import IssuePriority, IssueStatus
 
 
@@ -43,6 +44,15 @@ class IssueStatusChange(BaseModel):
     status: IssueStatus
 
 
+class IssueLabelsReplace(BaseModel):
+    """Body of PUT /api/issues/{id}/labels: the full replacement set.
+
+    Duplicate ids are tolerated and deduplicated.
+    """
+
+    label_ids: list[uuid.UUID]
+
+
 class IssueRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,5 +64,6 @@ class IssueRead(BaseModel):
     due_date: datetime | None
     closed_at: datetime | None
     project_id: uuid.UUID
+    labels: list[LabelRead] = []
     created_at: datetime
     updated_at: datetime
