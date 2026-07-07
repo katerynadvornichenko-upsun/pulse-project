@@ -1,11 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 
 import App from "./App";
 
 afterEach(() => {
+  // Auto-cleanup needs vitest globals, which this project doesn't enable.
+  cleanup();
   vi.restoreAllMocks();
 });
 
