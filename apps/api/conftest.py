@@ -13,7 +13,7 @@ from sqlalchemy import Engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
-from pulse.lib.db import get_session
+from pulse.lib.db import get_read_session, get_session
 from pulse.main import create_app
 
 collect_ignore_glob = ["**/_template/*"]
@@ -49,5 +49,7 @@ def client(engine: Engine) -> Iterator[TestClient]:
             yield session
 
     app.dependency_overrides[get_session] = override_get_session
+    # Tests have no replica; read-only sessions use the same test engine.
+    app.dependency_overrides[get_read_session] = override_get_session
     with TestClient(app) as client:
         yield client
