@@ -1,6 +1,7 @@
 import { NavLink, Route, Routes } from "react-router";
 
 import HomePage from "./pages/HomePage";
+import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ProjectsPage from "./pages/ProjectsPage";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -24,6 +25,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:id" element={<ProjectDetailPage />} />
         </Routes>
       </main>
     </div>
