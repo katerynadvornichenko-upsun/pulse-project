@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import { api } from "../lib/api";
 
@@ -86,7 +87,12 @@ export default function ProjectsPage() {
             {projects.data.map((project) => (
               <li key={project.id} className="flex items-center gap-3 py-2">
                 <div className="flex-1">
-                  <span className="font-medium">{project.name}</span>
+                  <Link
+                    to={`/projects/${project.id}`}
+                    className="font-medium hover:underline"
+                  >
+                    {project.name}
+                  </Link>
                   {project.description && (
                     <span className="ml-2 text-slate-500">{project.description}</span>
                   )}
