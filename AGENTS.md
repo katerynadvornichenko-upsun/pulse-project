@@ -44,6 +44,19 @@ CI runs exactly these checks.
 7. Add frontend code under `apps/web/src` and run `make gen-types` so the
    frontend sees the new endpoints.
 
+## Background jobs
+
+- Jobs live in their feature slice as `features/<name>/jobs.py`: a sync core
+  that takes a `Session` (test it with the `session` fixture) plus a thin
+  async ARQ entrypoint that opens its own session via `asyncio.to_thread`.
+- Register the entrypoint in `apps/api/src/pulse/worker.py` (`functions`,
+  and `cron_jobs` if worker-scheduled).
+- Two scheduling paths, both deliberate: worker-internal schedules use ARQ
+  `cron_jobs`; platform-driven schedules use an Upsun cron that enqueues the
+  job (see `pulse/jobs/enqueue_rollup.py` and the `crons` block in
+  `.upsun/config.yaml`).
+- Run the worker locally with `make dev-worker`.
+
 ## Database models and migrations
 
 All persisted models live in `apps/api/src/pulse/models.py`. Do not define
