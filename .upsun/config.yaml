@@ -44,12 +44,13 @@ applications:
         commands:
           start: ".venv/bin/arq pulse.worker.WorkerSettings"
 
-    # Phase 3: enable the daily dashboard rollup.
-    # crons:
-    #   daily-rollup:
-    #     spec: "H 3 * * *"
-    #     commands:
-    #       start: ".venv/bin/python -m pulse.jobs.enqueue_rollup"
+    crons:
+      # Enqueues the rollup; the queue worker executes it. Stale-issue
+      # detection is scheduled inside the worker itself (ARQ cron_jobs).
+      daily-rollup:
+        spec: "H 3 * * *"
+        commands:
+          start: ".venv/bin/python -m pulse.jobs.enqueue_rollup"
 
   web:
     type: "nodejs:20"
