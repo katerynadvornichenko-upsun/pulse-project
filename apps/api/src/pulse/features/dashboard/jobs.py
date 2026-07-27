@@ -7,6 +7,7 @@ from typing import Any
 from sqlmodel import Session
 
 from pulse.features.dashboard.service import get_stats
+from pulse.features.issues.service import CLOSED_STATUSES
 from pulse.lib.db import get_engine
 from pulse.models import ActivityEvent
 
@@ -19,7 +20,7 @@ def daily_rollup_sync(session: Session) -> ActivityEvent:
     """
     stats = get_stats(session)
     open_count = stats.issues_total - sum(
-        stats.issues_by_status.get(status, 0) for status in ("done", "cancelled")
+        stats.issues_by_status.get(status.value, 0) for status in CLOSED_STATUSES
     )
     event = ActivityEvent(
         entity_type="dashboard",

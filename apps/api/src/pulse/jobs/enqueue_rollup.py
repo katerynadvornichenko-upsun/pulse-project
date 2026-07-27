@@ -16,9 +16,11 @@ from pulse.worker import WorkerSettings
 
 async def main() -> None:
     pool = await create_pool(WorkerSettings.redis_settings)
-    job = await pool.enqueue_job("daily_rollup")
-    print(f"enqueued daily_rollup: {job.job_id if job else 'already queued'}")
-    await pool.close()
+    try:
+        job = await pool.enqueue_job("daily_rollup")
+        print(f"enqueued daily_rollup: {job.job_id if job else 'already queued'}")
+    finally:
+        await pool.close()
 
 
 if __name__ == "__main__":
