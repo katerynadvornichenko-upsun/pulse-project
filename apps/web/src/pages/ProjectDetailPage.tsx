@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 
 import type { Issue, IssuePriority, IssueStatus } from "../lib/api";
@@ -34,6 +34,11 @@ function IssueDetail({ issue, projectId }: { issue: Issue; projectId: string }) 
   const [description, setDescription] = useState(issue.description);
   const [confirming, setConfirming] = useState(false);
 
+  // Local mirror of the status so the select updates instantly instead of
+  // snapping back to the server value until the invalidated query refetches.
+  const [status, setStatusLocal] = useState<IssueStatus>(issue.status);
+  useEffect(() => setStatusLocal(issue.status), [issue.status]);
+
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["issues", projectId] });
 
@@ -42,7 +47,10 @@ function IssueDetail({ issue, projectId }: { issue: Issue; projectId: string }) 
     onSuccess: invalidate,
   });
   const setStatus = useMutation({
-    mutationFn: (status: IssueStatus) => api.issues.setStatus(issue.id, status),
+    mutationFn: (next: IssueStatus) => api.issues.setStatus(issue.id, next),
+    onMutate: (next: IssueStatus) => setStatusLocal(next),
+    // Roll back to the server value so a failure isn't silently kept.
+    onError: () => setStatusLocal(issue.status),
     onSuccess: invalidate,
   });
   const remove = useMutation({
@@ -78,12 +86,13 @@ function IssueDetail({ issue, projectId }: { issue: Issue; projectId: string }) 
           Status{" "}
           <select
             className="rounded border border-slate-300 px-2 py-1 text-sm"
-            value={issue.status}
+            value={status}
+            disabled={setStatus.isPending}
             onChange={(event) => setStatus.mutate(event.target.value as IssueStatus)}
           >
-            {ISSUE_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status.replace("_", " ")}
+            {ISSUE_STATUSES.map((value) => (
+              <option key={value} value={value}>
+                {value.replace("_", " ")}
               </option>
             ))}
           </select>
@@ -114,7 +123,12 @@ function IssueDetail({ issue, projectId }: { issue: Issue; projectId: string }) 
           </button>
         )}
       </div>
-      {(save.isError || setStatus.isError || remove.isError) && (
+      {setStatus.isError && (
+        <p className="text-sm text-red-600">
+          Status change failed; reverted to {issue.status.replace("_", " ")}.
+        </p>
+      )}
+      {(save.isError || remove.isError) && (
         <p className="text-sm text-red-600">The last change failed. Try again.</p>
       )}
     </div>

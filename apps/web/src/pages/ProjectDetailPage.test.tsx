@@ -38,7 +38,7 @@ function makeIssue(overrides: Partial<Issue>): Issue {
 
 /** In-memory fake honoring the status/priority filters, so filter changes
  * are observable through refetched results. */
-function stubApi(initialIssues: Issue[]) {
+function stubApi(initialIssues: Issue[], options: { failStatusChange?: boolean } = {}) {
   const issues = new Map(initialIssues.map((issue) => [issue.id, issue]));
   vi.stubGlobal(
     "fetch",
@@ -73,6 +73,18 @@ function stubApi(initialIssues: Issue[]) {
         });
         issues.set(issue.id, issue);
         return jsonResponse(issue, 201);
+      }
+      const statusMatch = url.pathname.match(/^\/api\/issues\/([^/]+)\/status$/);
+      if (statusMatch && method === "POST") {
+        if (options.failStatusChange) {
+          return new Response("boom", { status: 500 });
+        }
+        const issue = issues.get(statusMatch[1]);
+        if (!issue) return new Response("not found", { status: 404 });
+        const body = JSON.parse(String(init?.body));
+        const updated = { ...issue, status: body.status };
+        issues.set(issue.id, updated);
+        return jsonResponse(updated);
       }
       return new Response("not found", { status: 404 });
     }),
@@ -129,6 +141,36 @@ test("status filter narrows the list via the query parameter", async () => {
 
   expect(await screen.findByText("Done one")).toBeTruthy();
   expect(screen.queryByText("Open one")).toBeNull();
+});
+
+test("status change updates the select immediately and persists", async () => {
+  stubApi([makeIssue({ id: "issue-1", title: "Movable", status: "todo" })]);
+  renderPage();
+  fireEvent.click(await screen.findByText("Movable"));
+
+  const select = (await screen.findByLabelText(/Status/)) as HTMLSelectElement;
+  expect(select.value).toBe("todo");
+  fireEvent.change(select, { target: { value: "done" } });
+
+  // Optimistic: reflects the choice before any refetch settles.
+  expect(select.value).toBe("done");
+  // And the refetched row shows the new status badge.
+  const row = (await screen.findByText("Movable")).closest("li")!;
+  expect(await within(row).findByText("done")).toBeTruthy();
+});
+
+test("failed status change rolls the select back and says so", async () => {
+  stubApi([makeIssue({ id: "issue-1", title: "Stuck", status: "todo" })], {
+    failStatusChange: true,
+  });
+  renderPage();
+  fireEvent.click(await screen.findByText("Stuck"));
+
+  const select = (await screen.findByLabelText(/Status/)) as HTMLSelectElement;
+  fireEvent.change(select, { target: { value: "done" } });
+
+  expect(await screen.findByText(/Status change failed; reverted to todo/)).toBeTruthy();
+  expect(select.value).toBe("todo");
 });
 
 test("creates an issue and shows it in the list", async () => {
