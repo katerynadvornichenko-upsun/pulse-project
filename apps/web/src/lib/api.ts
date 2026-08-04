@@ -3,6 +3,8 @@
 import type { components } from "./api-types.gen";
 
 export type Project = components["schemas"]["ProjectRead"];
+export type DashboardStats = components["schemas"]["DashboardStats"];
+export type ActivityEvent = components["schemas"]["ActivityEventRead"];
 export type Issue = components["schemas"]["IssueRead"];
 export type Label = components["schemas"]["LabelRead"];
 export type IssueStatus = components["schemas"]["IssueStatus"];
@@ -47,6 +49,11 @@ function withQuery(path: string, params: Record<string, string | undefined>): st
 
 export const api = {
   health: () => request<Health>("/api/health"),
+  dashboard: {
+    stats: () => request<DashboardStats>("/api/dashboard/stats"),
+    activity: (limit = 20) =>
+      request<ActivityEvent[]>(`/api/dashboard/activity?limit=${limit}`),
+  },
   projects: {
     list: () => request<Project[]>("/api/projects"),
     get: (id: string) => request<Project>(`/api/projects/${id}`),

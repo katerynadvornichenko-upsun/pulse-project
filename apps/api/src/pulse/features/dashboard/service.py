@@ -17,6 +17,13 @@ from pulse.features.issues.service import CLOSED_STATUSES
 from pulse.models import ActivityEvent, Issue, Project, utcnow
 
 
+def list_recent_activity(session: Session, limit: int = 20) -> Sequence[ActivityEvent]:
+    """Newest activity events first, for the dashboard timeline."""
+    return session.exec(
+        select(ActivityEvent).order_by(col(ActivityEvent.created_at).desc()).limit(limit)
+    ).all()
+
+
 def _enum_counts(rows: Sequence[tuple[Any, int]]) -> dict[str, int]:
     """Map (enum, count) rows to {value: count}; tolerates raw-string keys."""
     return {getattr(key, "value", str(key)): count for key, count in rows}
