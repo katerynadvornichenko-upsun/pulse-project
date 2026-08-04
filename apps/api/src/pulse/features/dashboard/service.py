@@ -18,9 +18,16 @@ from pulse.models import ActivityEvent, Issue, Project, utcnow
 
 
 def list_recent_activity(session: Session, limit: int = 20) -> Sequence[ActivityEvent]:
-    """Newest activity events first, for the dashboard timeline."""
+    """Newest activity events first, for the dashboard timeline.
+
+    `id` breaks ties: rows written in one operation share a `created_at`, and
+    without a stable tiebreak the limit boundary would drop or reorder them
+    non-deterministically between reads.
+    """
     return session.exec(
-        select(ActivityEvent).order_by(col(ActivityEvent.created_at).desc()).limit(limit)
+        select(ActivityEvent)
+        .order_by(col(ActivityEvent.created_at).desc(), col(ActivityEvent.id).desc())
+        .limit(limit)
     ).all()
 
 

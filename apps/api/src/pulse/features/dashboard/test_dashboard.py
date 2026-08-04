@@ -80,6 +80,32 @@ def test_activity_newest_first_with_limit(session: Session) -> None:
     assert [event.message for event in recent] == ["newest", "middle"]
 
 
+def test_activity_tied_timestamps_are_stable(session: Session) -> None:
+    import uuid
+
+    from pulse.models import ActivityEvent
+
+    tied = utcnow()
+    for i in range(5):
+        session.add(
+            ActivityEvent(
+                entity_type="test",
+                entity_id=uuid.uuid4(),
+                action="created",
+                message=f"tied-{i}",
+                created_at=tied,
+            )
+        )
+    session.commit()
+
+    first = [event.id for event in service.list_recent_activity(session, limit=3)]
+    second = [event.id for event in service.list_recent_activity(session, limit=3)]
+    assert first == second
+    # The two beyond the limit are exactly the ones ranked below the cut.
+    full = [event.id for event in service.list_recent_activity(session, limit=5)]
+    assert full[:3] == first
+
+
 def test_activity_over_http_validates_limit(client: TestClient) -> None:
     project = client.post("/api/projects", json={"name": "P"}).json()
     resp = client.get("/api/dashboard/activity")
