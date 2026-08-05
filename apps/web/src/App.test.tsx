@@ -18,7 +18,7 @@ function jsonResponse(body: unknown): Response {
   });
 }
 
-test("renders header and API status", async () => {
+test("renders header, nav, and API status", async () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {
@@ -26,7 +26,17 @@ test("renders header and API status", async () => {
       if (url.endsWith("/api/health")) {
         return jsonResponse({ status: "ok", version: "test" });
       }
-      if (url.endsWith("/api/projects")) {
+      if (url.includes("/api/dashboard/stats")) {
+        return jsonResponse({
+          projects: 0,
+          issues_total: 0,
+          issues_by_status: {},
+          issues_by_priority: {},
+          overdue: 0,
+          activity_last_7_days: 0,
+        });
+      }
+      if (url.includes("/api/dashboard/activity")) {
         return jsonResponse([]);
       }
       return new Response("not found", { status: 404 });
@@ -46,6 +56,7 @@ test("renders header and API status", async () => {
   );
 
   expect(screen.getByText("Pulse")).toBeTruthy();
+  expect(screen.getByText("Projects")).toBeTruthy();
   expect(await screen.findByText(/ok \(vtest\)/)).toBeTruthy();
-  expect(await screen.findByText("No projects yet.")).toBeTruthy();
+  expect(await screen.findByText("Nothing has happened yet.")).toBeTruthy();
 });
