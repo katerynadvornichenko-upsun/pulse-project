@@ -10,7 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from enum import Enum
 
-from sqlalchemy import Column, DateTime
+from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -35,6 +35,11 @@ class IssuePriority(str, Enum):
     MEDIUM = "medium"
     HIGH = "high"
     URGENT = "urgent"
+
+
+class FeedKind(str, Enum):
+    GITHUB = "github"
+    RSS = "rss"
 
 
 class User(SQLModel, table=True):
@@ -111,3 +116,36 @@ class ActivityEvent(SQLModel, table=True):
     action: str  # e.g. "created", "updated", "deleted"
     message: str = ""
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
+
+
+class FeedSource(SQLModel, table=True):
+    __tablename__ = "feed_sources"  # type: ignore[assignment]
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    name: str
+    kind: FeedKind
+    url: str
+    enabled: bool = True
+    created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
+
+    items: list["FeedItem"] = Relationship(back_populates="source", cascade_delete=True)
+
+
+class FeedItem(SQLModel, table=True):
+    __tablename__ = "feed_items"  # type: ignore[assignment]
+    __table_args__ = (
+        UniqueConstraint("source_id", "external_id", name="uq_feed_items_source_external"),
+    )
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
+    source_id: uuid.UUID = Field(foreign_key="feed_sources.id", index=True, ondelete="CASCADE")
+    external_id: str
+    title: str
+    url: str
+    summary: str = ""
+    published_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
+    fetched_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
+
+    source: FeedSource = Relationship(back_populates="items")
