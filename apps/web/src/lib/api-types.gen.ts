@@ -165,6 +165,24 @@ export interface paths {
         patch: operations["update_label_api_labels__label_id__patch"];
         trace?: never;
     };
+    "/api/feeds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Feeds */
+        get: operations["list_feeds_api_feeds_get"];
+        put?: never;
+        /** Create Feed */
+        post: operations["create_feed_api_feeds_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/stats": {
         parameters: {
             query?: never;
@@ -252,6 +270,34 @@ export interface components {
             overdue: number;
             /** Activity Last 7 Days */
             activity_last_7_days: number;
+        };
+        /**
+         * FeedKind
+         * @enum {string}
+         */
+        FeedKind: "github" | "rss";
+        /** FeedSourceCreate */
+        FeedSourceCreate: {
+            /** Name */
+            name: string;
+            kind: components["schemas"]["FeedKind"];
+            /** Url */
+            url: string;
+        };
+        /** FeedSourceRead */
+        FeedSourceRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            kind: components["schemas"]["FeedKind"];
+            /** Url */
+            url: string;
+            /** Enabled */
+            enabled: boolean;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -961,6 +1007,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LabelRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_feeds_api_feeds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedSourceRead"][];
+                };
+            };
+        };
+    };
+    create_feed_api_feeds_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedSourceCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedSourceRead"];
                 };
             };
             /** @description Validation Error */

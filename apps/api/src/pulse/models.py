@@ -124,7 +124,7 @@ class FeedSource(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
     kind: FeedKind
-    url: str
+    url: str = Field(unique=True, index=True)
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
 
