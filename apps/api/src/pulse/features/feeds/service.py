@@ -1,8 +1,10 @@
+import uuid
+
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from pulse.features.feeds.schemas import FeedSourceCreate
-from pulse.lib.errors import ConflictError
+from pulse.features.feeds.schemas import FeedSourceCreate, FeedSourceUpdate
+from pulse.lib.errors import ConflictError, NotFoundError
 from pulse.models import ActivityEvent, FeedSource
 
 
@@ -42,6 +44,13 @@ def list_sources(session: Session) -> list[FeedSource]:
     return list(session.exec(select(FeedSource).order_by(col(FeedSource.name))).all())
 
 
+def get_source(session: Session, source_id: uuid.UUID) -> FeedSource:
+    source = session.get(FeedSource, source_id)
+    if source is None:
+        raise NotFoundError("FeedSource", source_id)
+    return source
+
+
 def create_source(session: Session, data: FeedSourceCreate) -> FeedSource:
     _assert_url_free(session, data.url)
     source = FeedSource(name=data.name, kind=data.kind, url=data.url)
@@ -50,3 +59,30 @@ def create_source(session: Session, data: FeedSourceCreate) -> FeedSource:
     _commit_or_conflict(session, data.url)
     session.refresh(source)
     return source
+
+
+def update_source(session: Session, source_id: uuid.UUID, data: FeedSourceUpdate) -> FeedSource:
+    source = get_source(session, source_id)
+    # exclude_unset only: see AGENTS.md, PATCH semantics. The schema rejects
+    # null for every field.
+    changes = data.model_dump(exclude_unset=True)
+    new_url = changes.get("url")
+    # Renaming url onto another source is a 409; renaming to the current value
+    # is a no-op that must not conflict with the row being updated.
+    if new_url is not None and new_url != source.url:
+        _assert_url_free(session, new_url)
+    for key, value in changes.items():
+        setattr(source, key, value)
+    session.add(source)
+    _record(session, source, "updated")
+    _commit_or_conflict(session, source.url)
+    session.refresh(source)
+    return source
+
+
+def delete_source(session: Session, source_id: uuid.UUID) -> None:
+    source = get_source(session, source_id)
+    _record(session, source, "deleted")
+    # Child FeedItems go with it via the ondelete="CASCADE" FK (see models.py).
+    session.delete(source)
+    session.commit()

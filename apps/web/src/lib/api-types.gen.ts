@@ -183,6 +183,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/feeds/sources/{source_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Source */
+        delete: operations["delete_source_api_feeds_sources__source_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Source */
+        patch: operations["update_source_api_feeds_sources__source_id__patch"];
+        trace?: never;
+    };
     "/api/dashboard/stats": {
         parameters: {
             query?: never;
@@ -298,6 +316,21 @@ export interface components {
             url: string;
             /** Enabled */
             enabled: boolean;
+        };
+        /**
+         * FeedSourceUpdate
+         * @description PATCH body. Omitted fields stay unchanged. No field accepts null.
+         *
+         *     `kind` is deliberately absent and, like any unknown field, rejected via
+         *     extra="forbid": a source's kind is fixed at creation.
+         */
+        FeedSourceUpdate: {
+            /** Name */
+            name?: string | null;
+            /** Url */
+            url?: string | null;
+            /** Enabled */
+            enabled?: boolean | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1055,6 +1088,70 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedSourceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_feeds_sources__source_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_source_api_feeds_sources__source_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                source_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedSourceUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
