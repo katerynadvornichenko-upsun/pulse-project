@@ -125,8 +125,9 @@ class FeedSource(SQLModel, table=True):
     name: str
     kind: FeedKind
     # Bounded so the unique btree index stays within Postgres's ~2704-byte
-    # entry limit even for 4-byte multibyte characters (512 * 4 = 2048).
-    url: str = Field(unique=True, index=True, max_length=512)
+    # per-entry limit even for 4-byte multibyte characters: 670 * 4 = 2680,
+    # leaving a little headroom for tuple overhead.
+    url: str = Field(unique=True, index=True, max_length=670)
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
 

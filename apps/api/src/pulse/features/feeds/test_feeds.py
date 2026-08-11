@@ -96,6 +96,6 @@ def test_overlong_url_rejected(client: TestClient) -> None:
     # before it can reach an oversized index entry.
     resp = client.post(
         "/api/feeds/sources",
-        json={"name": "long", "kind": "rss", "url": "https://x.example/" + "a" * 600},
+        json={"name": "long", "kind": "rss", "url": "https://x.example/" + "a" * 700},
     )
     assert resp.status_code == 422
