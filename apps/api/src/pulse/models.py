@@ -124,7 +124,9 @@ class FeedSource(SQLModel, table=True):
     id: uuid.UUID = Field(default_factory=uuid.uuid4, primary_key=True)
     name: str
     kind: FeedKind
-    url: str = Field(unique=True, index=True)
+    # Bounded so the unique btree index stays within Postgres's ~2704-byte
+    # entry limit even for 4-byte multibyte characters (512 * 4 = 2048).
+    url: str = Field(unique=True, index=True, max_length=512)
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
 

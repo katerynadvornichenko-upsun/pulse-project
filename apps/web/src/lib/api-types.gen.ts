@@ -165,18 +165,18 @@ export interface paths {
         patch: operations["update_label_api_labels__label_id__patch"];
         trace?: never;
     };
-    "/api/feeds": {
+    "/api/feeds/sources": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Feeds */
-        get: operations["list_feeds_api_feeds_get"];
+        /** List Sources */
+        get: operations["list_sources_api_feeds_sources_get"];
         put?: never;
-        /** Create Feed */
-        post: operations["create_feed_api_feeds_post"];
+        /** Create Source */
+        post: operations["create_source_api_feeds_sources_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1020,7 +1020,7 @@ export interface operations {
             };
         };
     };
-    list_feeds_api_feeds_get: {
+    list_sources_api_feeds_sources_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1040,7 +1040,7 @@ export interface operations {
             };
         };
     };
-    create_feed_api_feeds_post: {
+    create_source_api_feeds_sources_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -64,7 +64,7 @@ def test_create_records_activity_event(session: Session) -> None:
 
 def test_create_and_list_over_http(client: TestClient) -> None:
     resp = client.post(
-        "/api/feeds",
+        "/api/feeds/sources",
         json={"name": "gh", "kind": "github", "url": "https://github.com/o/r"},
     )
     assert resp.status_code == 201
@@ -74,18 +74,28 @@ def test_create_and_list_over_http(client: TestClient) -> None:
 
     # Duplicate url is a 409.
     dup = client.post(
-        "/api/feeds",
+        "/api/feeds/sources",
         json={"name": "gh2", "kind": "github", "url": "https://github.com/o/r"},
     )
     assert dup.status_code == 409
 
     # Unknown kind is a 422 via the enum.
     bad = client.post(
-        "/api/feeds",
+        "/api/feeds/sources",
         json={"name": "x", "kind": "twitter", "url": "https://x.example/feed"},
     )
     assert bad.status_code == 422
 
-    listing = client.get("/api/feeds")
+    listing = client.get("/api/feeds/sources")
     assert listing.status_code == 200
     assert [item["name"] for item in listing.json()] == ["gh"]
+
+
+def test_overlong_url_rejected(client: TestClient) -> None:
+    # Guards the Postgres unique-index byte limit: the schema caps url length
+    # before it can reach an oversized index entry.
+    resp = client.post(
+        "/api/feeds/sources",
+        json={"name": "long", "kind": "rss", "url": "https://x.example/" + "a" * 600},
+    )
+    assert resp.status_code == 422
