@@ -159,6 +159,19 @@ def test_update_records_activity_event(session: Session) -> None:
     assert events[0].entity_id == source.id
 
 
+def test_noop_update_records_no_event(session: Session) -> None:
+    source = service.create_source(
+        session, FeedSourceCreate(name="one", kind=FeedKind.RSS, url="https://noop.example/feed")
+    )
+    # Empty PATCH body, and one that resets a field to its current value.
+    service.update_source(session, source.id, FeedSourceUpdate())
+    service.update_source(session, source.id, FeedSourceUpdate(name="one"))
+    events = session.exec(
+        select(ActivityEvent).where(ActivityEvent.action == "updated")
+    ).all()
+    assert events == []
+
+
 def test_delete_records_activity_event(session: Session) -> None:
     source = service.create_source(
         session, FeedSourceCreate(name="one", kind=FeedKind.RSS, url="https://ad.example/feed")
@@ -191,7 +204,9 @@ def test_delete_cascades_to_items(session: Session) -> None:
     service.delete_source(session, source.id)
 
     assert session.get(FeedSource, source.id) is None
-    # The ondelete="CASCADE" FK from part 1 removes the child items.
+    # Removed by the ORM relationship's cascade_delete (models.py). The FK's
+    # ondelete="CASCADE" backs this on Postgres but is inert on SQLite, where
+    # FK enforcement is off, so this assertion exercises the ORM cascade.
     assert session.exec(select(FeedItem).where(FeedItem.source_id == source.id)).all() == []
 
 

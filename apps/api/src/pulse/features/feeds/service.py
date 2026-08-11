@@ -65,12 +65,16 @@ def update_source(session: Session, source_id: uuid.UUID, data: FeedSourceUpdate
     source = get_source(session, source_id)
     # exclude_unset only: see AGENTS.md, PATCH semantics. The schema rejects
     # null for every field.
-    changes = data.model_dump(exclude_unset=True)
-    new_url = changes.get("url")
-    # Renaming url onto another source is a 409; renaming to the current value
-    # is a no-op that must not conflict with the row being updated.
-    if new_url is not None and new_url != source.url:
-        _assert_url_free(session, new_url)
+    supplied = data.model_dump(exclude_unset=True)
+    # Keep only fields whose value actually differs, so an empty PATCH body or
+    # one that resets fields to their current values is a no-op (no timeline
+    # event, no write).
+    changes = {key: value for key, value in supplied.items() if getattr(source, key) != value}
+    if not changes:
+        return source
+
+    if "url" in changes:
+        _assert_url_free(session, changes["url"])
     for key, value in changes.items():
         setattr(source, key, value)
     session.add(source)
@@ -83,6 +87,10 @@ def update_source(session: Session, source_id: uuid.UUID, data: FeedSourceUpdate
 def delete_source(session: Session, source_id: uuid.UUID) -> None:
     source = get_source(session, source_id)
     _record(session, source, "deleted")
-    # Child FeedItems go with it via the ondelete="CASCADE" FK (see models.py).
+    # Child FeedItems are removed by the ORM relationship's cascade_delete
+    # (models.py), which issues the child DELETEs itself. The FK's
+    # ondelete="CASCADE" backs this at the DB level on Postgres, but is a
+    # no-op on the SQLite test backend (FK enforcement is off there), so the
+    # ORM cascade is what the tests actually exercise.
     session.delete(source)
     session.commit()
