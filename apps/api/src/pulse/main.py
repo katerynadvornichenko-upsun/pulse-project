@@ -2,6 +2,7 @@ from fastapi import APIRouter, FastAPI
 
 from pulse import __version__
 from pulse.features.dashboard.router import router as dashboard_router
+from pulse.features.feeds.router import router as feeds_router
 from pulse.features.issues.router import router as issues_router
 from pulse.features.labels.router import router as labels_router
 from pulse.features.projects.router import router as projects_router
@@ -26,6 +27,7 @@ def create_app() -> FastAPI:
     api.include_router(projects_router)
     api.include_router(issues_router)
     api.include_router(labels_router)
+    api.include_router(feeds_router)
     api.include_router(dashboard_router)
     app.include_router(api)
     return app
