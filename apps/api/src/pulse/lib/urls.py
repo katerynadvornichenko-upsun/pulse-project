@@ -1,17 +1,23 @@
 """URL safety checks for user-supplied feed sources.
 
 Feed URLs are supplied through the API and later fetched by the worker from
-inside the private network, so they are an SSRF sink. Two layers guard them:
+inside the private network, so they are an SSRF sink. Three layers guard them:
 
 - `validate_feed_url` is a cheap syntactic check used by the request schemas.
   It runs no DNS (so the API never blocks on a resolver, and validation stays
   deterministic offline).
-- `assert_public_target` resolves the host and is called by the fetch job
-  immediately before each request, including every redirect hop.
+- `resolve_public_ip` resolves the host, with a timeout, and rejects any
+  answer that is not globally routable.
+- `pulse.lib.http.build_guarded_client` pins that resolved address at connect
+  time. Checking without pinning would leave a DNS-rebinding gap: httpx
+  resolves again when it connects, so a short-TTL record can answer public to
+  the check and 127.0.0.1 to the connection.
 """
 
 import ipaddress
 import socket
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from urllib.parse import urlparse
 
 ALLOWED_SCHEMES = {"http", "https"}
@@ -20,6 +26,11 @@ BLOCKED_HOSTNAMES = {
     "localhost.localdomain",
     "metadata.google.internal",
 }
+# getaddrinfo takes no timeout argument and can hang on a sick resolver, which
+# would stall the whole (serial) feeds run. Bound it by resolving on a worker
+# thread and giving up on the result.
+DNS_TIMEOUT_SECONDS = 3.0
+_resolver_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pulse-dns")
 
 
 class UnsafeUrlError(ValueError):
@@ -40,8 +51,7 @@ def validate_feed_url(url: str) -> str:
     """Syntactic check: scheme, presence of a host, no obviously internal
     target. Returns the url unchanged so it can be used in a validator.
 
-    Deliberately does not resolve DNS; `assert_public_target` does that at
-    fetch time, when it also protects against records that changed since.
+    Deliberately does not resolve DNS; that happens at fetch time.
     """
     parsed = urlparse(url)
     if parsed.scheme.lower() not in ALLOWED_SCHEMES:
@@ -56,23 +66,48 @@ def validate_feed_url(url: str) -> str:
     return url
 
 
-def assert_public_target(url: str) -> None:
-    """Resolve the host and reject private, loopback, or link-local targets.
+def _getaddrinfo(hostname: str) -> list[tuple]:  # type: ignore[type-arg]
+    future = _resolver_pool.submit(socket.getaddrinfo, hostname, None)
+    try:
+        return list(future.result(timeout=DNS_TIMEOUT_SECONDS))
+    except FutureTimeoutError as exc:
+        # The worker thread may still be blocked in the resolver; the run
+        # moves on regardless.
+        raise UnsafeUrlError(f"DNS lookup for '{hostname}' timed out") from exc
 
-    Called immediately before each request (and each redirect hop). A host
-    that fails to resolve is left alone: nothing can be reached at it, so the
-    HTTP client's own connection error is the right outcome.
+
+def resolve_public_ip(url: str) -> str | None:
+    """Validate `url` and resolve it to a single globally routable address.
+
+    Returns the address to connect to, or None when the host does not
+    resolve: nothing can be reached at it, so the HTTP client's own
+    connection error is the right outcome (and offline tests keep working).
+
+    Raises UnsafeUrlError if the URL is malformed, resolution times out, or
+    any answer is private, loopback, link-local, or otherwise non-global.
+    Every answer is checked, not just the one returned, so a mixed
+    public/private record cannot slip through.
     """
     validate_feed_url(url)
     hostname = urlparse(url).hostname
     assert hostname is not None  # guaranteed by validate_feed_url
     try:
-        infos = socket.getaddrinfo(hostname, None)
+        infos = _getaddrinfo(hostname)
     except OSError:
-        return
-    for info in infos:
-        address = info[4][0]
-        if _is_disallowed_ip(str(address)):
+        return None
+    if not infos:
+        return None
+    addresses = [str(info[4][0]) for info in infos]
+    for address in addresses:
+        if _is_disallowed_ip(address):
             raise UnsafeUrlError(
                 f"url resolves to a non-public address ({address}); refusing to fetch"
             )
+    return addresses[0]
+
+
+def assert_public_target(url: str) -> None:
+    """Validate and resolve, discarding the address. Used as an early check
+    before a request; `build_guarded_client` performs the authoritative,
+    pinned check at connect time."""
+    resolve_public_ip(url)

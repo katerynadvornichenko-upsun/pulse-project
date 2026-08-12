@@ -37,7 +37,7 @@ def test_unsafe_urls_rejected(url: str) -> None:
 
 
 def test_assert_public_target_rejects_host_resolving_to_private_ip(
-    monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A public-looking hostname whose DNS answer is internal (rebinding)."""
     monkeypatch.setattr(
@@ -48,9 +48,7 @@ def test_assert_public_target_rejects_host_resolving_to_private_ip(
         assert_public_target("https://sneaky.example.com/feed")
 
 
-def test_assert_public_target_allows_unresolvable_host(
-    monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_assert_public_target_allows_unresolvable_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nothing can be reached at a name that does not resolve, so leave it to
     the HTTP client to fail naturally."""
 
@@ -59,3 +57,34 @@ def test_assert_public_target_allows_unresolvable_host(
 
     monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", boom)
     assert_public_target("https://nonexistent.invalid/feed")
+
+
+def test_slow_resolver_times_out_instead_of_hanging(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A hung resolver must not stall the whole serial feeds run."""
+    import time
+
+    def slow(*a: object, **kw: object) -> list:
+        time.sleep(5)
+        return []
+
+    monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", slow)
+    monkeypatch.setattr("pulse.lib.urls.DNS_TIMEOUT_SECONDS", 0.1)
+
+    started = time.monotonic()
+    with pytest.raises(UnsafeUrlError, match="timed out"):
+        assert_public_target("https://slow.example.com/feed")
+    assert time.monotonic() - started < 2
+
+
+def test_mixed_public_and_private_answers_are_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every answer is checked, so a record mixing a public and an internal
+    address cannot slip through on ordering."""
+    monkeypatch.setattr(
+        "pulse.lib.urls.socket.getaddrinfo",
+        lambda *a, **kw: [
+            (2, 1, 6, "", ("93.184.216.34", 80)),
+            (2, 1, 6, "", ("127.0.0.1", 80)),
+        ],
+    )
+    with pytest.raises(UnsafeUrlError):
+        assert_public_target("https://mixed.example.com/feed")

@@ -44,10 +44,11 @@ class FeedSourceUpdate(BaseModel):
 
     @field_validator("url")
     @classmethod
-    def url_is_safe(cls, value: str | None) -> str | None:
+    def url_is_safe(cls, value: str) -> str:
         # Same guard as on create: a PATCH must not be able to repoint a
-        # source at an internal address.
-        return None if value is None else validate_feed_url(value)
+        # source at an internal address. Never sees None — validators run in
+        # definition order and reject_explicit_null above rejects it first.
+        return validate_feed_url(value)
 
 
 class FeedSourceRead(BaseModel):

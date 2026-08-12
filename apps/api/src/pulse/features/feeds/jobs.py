@@ -28,6 +28,7 @@ from sqlalchemy import func
 from sqlmodel import Session, col, select
 
 from pulse.lib.db import get_engine
+from pulse.lib.http import build_guarded_client
 from pulse.lib.redis import get_redis
 from pulse.lib.urls import UnsafeUrlError, assert_public_target
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
@@ -101,12 +102,19 @@ def _get_checked(
         response = client.get(
             url, timeout=HTTP_TIMEOUT_SECONDS, headers=headers, follow_redirects=False
         )
-        if not response.is_redirect:
-            return response
-        location = response.headers.get("location")
-        if not location:
-            return response
-        url = str(response.url.join(location))
+        if 300 <= response.status_code < 400:
+            # is_redirect only covers 301/302/303/307/308. Anything else in
+            # the 3xx range (300, 305, 306, or a redirect with no Location)
+            # carries no body worth parsing, and raise_for_status ignores 3xx,
+            # so it would otherwise be recorded as a successful empty fetch.
+            location = response.headers.get("location")
+            if not response.is_redirect or not location:
+                raise UnsafeUrlError(
+                    f"unhandled {response.status_code} response from '{url}'"
+                )
+            url = str(response.url.join(location))
+            continue
+        return response
     raise UnsafeUrlError(f"too many redirects (>{MAX_REDIRECTS})")
 
 
@@ -143,8 +151,17 @@ def _fetch_github(source: FeedSource, client: httpx.Client) -> list[_Entry]:
         headers={"Accept": "application/vnd.github+json"},
     )
     response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        # The events API answers with an object on error (e.g. rate limiting
+        # or a missing repo: {"message": ...}). Say so plainly rather than
+        # letting the loop fail with an AttributeError on a string key.
+        detail = ""
+        if isinstance(payload, dict):
+            detail = f": {payload.get('message', '')}".rstrip(": ")
+        raise ValueError(f"expected a JSON array of events from GitHub{detail}")
     entries: list[_Entry] = []
-    for event in response.json():
+    for event in payload:
         external_id = event.get("id")
         if not external_id:
             continue
@@ -250,7 +267,9 @@ def fetch_feeds_sync(
     written to the cache (the newest `CACHE_LIMIT` items).
     """
     owns_client = client is None
-    client = client or httpx.Client()
+    # The default client validates and IP-pins every connection; tests inject
+    # a fake and exercise that guard separately (see lib/test_http.py).
+    client = client or build_guarded_client(HTTP_TIMEOUT_SECONDS)
     try:
         sources = session.exec(
             select(FeedSource).where(col(FeedSource.enabled).is_(True))

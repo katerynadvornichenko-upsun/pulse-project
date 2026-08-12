@@ -341,3 +341,39 @@ def test_redirect_into_private_space_is_refused(
         select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
     ).all()
     assert len(failures) == 1
+
+
+def test_unhandled_3xx_is_a_failure_not_an_empty_success(session: Session) -> None:
+    """A 300/305/306, or a 3xx without Location, must not read as a clean
+    poll: raise_for_status ignores 3xx, so the body would parse as zero
+    entries and the source would be stamped as successfully fetched."""
+    source = _add_source(session, "rss", FeedKind.RSS, RSS_URL)
+    client = FakeClient({RSS_URL: FakeResponse(status_code=300, request_url=RSS_URL)})
+
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
+
+    session.refresh(source)
+    assert source.last_fetched_at is None
+    failures = session.exec(
+        select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
+    ).all()
+    assert len(failures) == 1
+    assert "300" in failures[0].message
+
+
+def test_github_object_payload_reports_a_shape_mismatch(session: Session) -> None:
+    """The events API answers with an object on error; the message should say
+    so rather than surfacing an AttributeError from iterating string keys."""
+    _add_source(session, "gh", FeedKind.GITHUB, GITHUB_URL)
+    routes = {GITHUB_EVENTS_URL: FakeResponse(json_data={"message": "API rate limit exceeded"})}
+
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
+
+    failure = session.exec(
+        select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
+    ).one()
+    assert "expected a JSON array" in failure.message
+    assert "rate limit" in failure.message
+    assert "AttributeError" not in failure.message
