@@ -21,6 +21,7 @@ from time import struct_time
 from typing import Any
 from urllib.parse import urlparse
 
+import feedparser
 import httpx
 from redis import Redis, RedisError
 from sqlalchemy import func
@@ -28,6 +29,7 @@ from sqlmodel import Session, col, select
 
 from pulse.lib.db import get_engine
 from pulse.lib.redis import get_redis
+from pulse.lib.urls import UnsafeUrlError, assert_public_target
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
 
 # Redis key the dashboard endpoint (next slice) reads the cached feed from.
@@ -40,6 +42,9 @@ CACHE_TTL_SECONDS = 60 * 90
 # Per-request network timeout for feed fetches.
 HTTP_TIMEOUT_SECONDS = 10.0
 GITHUB_EVENTS_URL = "https://api.github.com/repos/{owner}/{repo}/events"
+# Redirects are followed by hand so every hop can be re-validated; a public
+# URL must not be able to 302 into private address space.
+MAX_REDIRECTS = 5
 
 
 @dataclass
@@ -82,12 +87,31 @@ def _github_events_url(url: str) -> str:
     return GITHUB_EVENTS_URL.format(owner=owner, repo=repo)
 
 
-def _fetch_rss(source: FeedSource, client: httpx.Client) -> list[_Entry]:
-    # Imported lazily so the module (and the GitHub path) load even where the
-    # optional feedparser dependency is absent.
-    import feedparser
+def _get_checked(
+    client: httpx.Client, url: str, headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """GET `url`, validating the target before every hop.
 
-    response = client.get(source.url, timeout=HTTP_TIMEOUT_SECONDS, follow_redirects=True)
+    `follow_redirects=False` plus manual hop-following is what makes the
+    re-validation possible: httpx's own redirect handling would connect to a
+    Location we never inspected.
+    """
+    for _ in range(MAX_REDIRECTS + 1):
+        assert_public_target(url)
+        response = client.get(
+            url, timeout=HTTP_TIMEOUT_SECONDS, headers=headers, follow_redirects=False
+        )
+        if not response.is_redirect:
+            return response
+        location = response.headers.get("location")
+        if not location:
+            return response
+        url = str(response.url.join(location))
+    raise UnsafeUrlError(f"too many redirects (>{MAX_REDIRECTS})")
+
+
+def _fetch_rss(source: FeedSource, client: httpx.Client) -> list[_Entry]:
+    response = _get_checked(client, source.url)
     response.raise_for_status()
     parsed = feedparser.parse(response.content)
     entries: list[_Entry] = []
@@ -113,9 +137,9 @@ def _fetch_rss(source: FeedSource, client: httpx.Client) -> list[_Entry]:
 
 
 def _fetch_github(source: FeedSource, client: httpx.Client) -> list[_Entry]:
-    response = client.get(
+    response = _get_checked(
+        client,
         _github_events_url(source.url),
-        timeout=HTTP_TIMEOUT_SECONDS,
         headers={"Accept": "application/vnd.github+json"},
     )
     response.raise_for_status()
@@ -149,7 +173,13 @@ def _fetch_entries(source: FeedSource, client: httpx.Client) -> list[_Entry]:
 
 def _upsert(session: Session, source: FeedSource, entries: list[_Entry]) -> None:
     """Insert new FeedItems and refresh existing ones, keyed by
-    (source_id, external_id), stamping fetched_at each time."""
+    (source_id, external_id).
+
+    `fetched_at` is set on insert only. It doubles as the recency fallback for
+    undated entries, so re-stamping it would push every undated item back to
+    the top of the cache on each run. Last-poll time is recorded on the
+    source (`last_fetched_at`).
+    """
     now = utcnow()
     for entry in entries:
         existing = session.exec(
@@ -174,7 +204,6 @@ def _upsert(session: Session, source: FeedSource, entries: list[_Entry]) -> None
             existing.url = entry.url
             existing.summary = entry.summary
             existing.published_at = entry.published_at
-            existing.fetched_at = now
             session.add(existing)
 
 
@@ -230,6 +259,8 @@ def fetch_feeds_sync(
             try:
                 entries = _fetch_entries(source, client)
                 _upsert(session, source, entries)
+                source.last_fetched_at = utcnow()
+                session.add(source)
                 session.commit()
             except Exception as exc:  # noqa: BLE001 - isolate per-source failures
                 session.rollback()

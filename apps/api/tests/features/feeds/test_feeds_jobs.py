@@ -7,9 +7,11 @@ refetch, per-source failure isolation, and cache content.
 
 import json
 from datetime import datetime, timedelta, timezone
+from typing import cast
 
 import httpx
 import pytest
+from redis import Redis
 from sqlmodel import Session, col, select
 
 from pulse.features.feeds import jobs
@@ -60,10 +62,27 @@ def _events(count: int, prefix: str = "e") -> list[dict]:
 
 
 class FakeResponse:
-    def __init__(self, *, content: bytes = b"", json_data=None, status_code: int = 200):
+    """Stands in for httpx.Response, including the redirect surface the job
+    inspects (`is_redirect`, `headers["location"]`, `url.join`)."""
+
+    def __init__(
+        self,
+        *,
+        content: bytes = b"",
+        json_data=None,
+        status_code: int = 200,
+        location: str | None = None,
+        request_url: str = "https://feeds.example.com/rss",
+    ):
         self.content = content
         self._json = json_data
         self.status_code = status_code
+        self.headers = {"location": location} if location else {}
+        self.url = httpx.URL(request_url)
+
+    @property
+    def is_redirect(self) -> bool:
+        return 300 <= self.status_code < 400 and "location" in self.headers
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -101,6 +120,19 @@ class FakeRedis:
         return self.store.get(key)
 
 
+def as_client(fake: FakeClient) -> httpx.Client:
+    """Present a test double as the real type the job's signature declares.
+
+    The fakes implement only the surface the job uses; casting here keeps the
+    production signatures honest instead of widening them for tests.
+    """
+    return cast(httpx.Client, fake)
+
+
+def as_redis(fake: FakeRedis) -> Redis:
+    return cast(Redis, fake)
+
+
 def _add_source(session: Session, name: str, kind: FeedKind, url: str) -> FeedSource:
     source = FeedSource(name=name, kind=kind, url=url)
     session.add(source)
@@ -117,12 +149,16 @@ def test_github_refetch_produces_no_duplicates(session: Session) -> None:
     source = _add_source(session, "gh", FeedKind.GITHUB, GITHUB_URL)
     routes = {GITHUB_EVENTS_URL: FakeResponse(json_data=_events(3))}
 
-    jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
     assert len(_all_items(session)) == 3
 
     # Same stubbed response a second time: rows are matched by
     # (source_id, external_id) and updated in place, never re-inserted.
-    jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
     items = _all_items(session)
     assert len(items) == 3
     assert all(item.source_id == source.id for item in items)
@@ -133,11 +169,15 @@ def test_rss_refetch_produces_no_duplicates(session: Session) -> None:
     _add_source(session, "rss", FeedKind.RSS, RSS_URL)
     routes = {RSS_URL: FakeResponse(content=RSS_XML)}
 
-    jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
     first = _all_items(session)
     assert {item.external_id for item in first} == {"guid-1", "guid-2"}
 
-    jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
     assert len(_all_items(session)) == 2
 
 
@@ -149,16 +189,16 @@ def test_failing_source_does_not_abort_the_others(session: Session) -> None:
         BAD_GITHUB_EVENTS_URL: FakeResponse(status_code=500),
     }
 
-    jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
 
     items = _all_items(session)
     assert len(items) == 2
     assert {item.source_id for item in items} == {good.id}
 
     failures = list(
-        session.exec(
-            select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
-        ).all()
+        session.exec(select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")).all()
     )
     assert len(failures) == 1
     assert failures[0].entity_id == bad.id
@@ -172,7 +212,7 @@ def test_disabled_sources_are_skipped(session: Session) -> None:
     session.commit()
 
     client = FakeClient({GITHUB_EVENTS_URL: FakeResponse(json_data=_events(2))})
-    jobs.fetch_feeds_sync(session, client=client, redis_client=FakeRedis())
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
 
     assert _all_items(session) == []
     assert client.requested == []
@@ -183,13 +223,17 @@ def test_cache_holds_the_newest_items_with_ttl(session: Session) -> None:
     routes = {GITHUB_EVENTS_URL: FakeResponse(json_data=_events(60))}
     redis = FakeRedis()
 
-    payload = jobs.fetch_feeds_sync(session, client=FakeClient(routes), redis_client=redis)
+    payload = jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(redis)
+    )
 
     # All 60 upserted, but only the newest CACHE_LIMIT are cached.
     assert len(_all_items(session)) == 60
     assert len(payload) == jobs.CACHE_LIMIT
 
-    cached = json.loads(redis.get(jobs.CACHE_KEY))
+    raw = redis.get(jobs.CACHE_KEY)
+    assert raw is not None
+    cached = json.loads(raw)
     assert len(cached) == jobs.CACHE_LIMIT
     assert redis.ttls[jobs.CACHE_KEY] == jobs.CACHE_TTL_SECONDS
 
@@ -198,3 +242,102 @@ def test_cache_holds_the_newest_items_with_ttl(session: Session) -> None:
     assert published == sorted(published, reverse=True)
     assert cached[0]["external_id"] == "e59"
     assert all(entry["external_id"] != "e0" for entry in cached)
+
+
+RSS_UNDATED_XML = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Undated</title>
+    <item>
+      <title>No date</title>
+      <link>https://example.com/undated</link>
+      <guid>undated-1</guid>
+      <description>No pubDate at all</description>
+    </item>
+  </channel>
+</rss>
+"""
+
+
+def test_undated_items_do_not_re_bubble_on_refetch(session: Session) -> None:
+    """fetched_at is first-seen only, so an undated entry keeps its place
+    instead of floating above genuinely newer items every run."""
+    _add_source(session, "undated", FeedKind.RSS, RSS_URL)
+    routes = {RSS_URL: FakeResponse(content=RSS_UNDATED_XML)}
+
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
+    first_seen = _all_items(session)[0].fetched_at
+
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
+    item = _all_items(session)[0]
+    assert item.fetched_at == first_seen
+
+
+def test_successful_fetch_stamps_the_source(session: Session) -> None:
+    source = _add_source(session, "gh", FeedKind.GITHUB, GITHUB_URL)
+    assert source.last_fetched_at is None
+
+    routes = {GITHUB_EVENTS_URL: FakeResponse(json_data=_events(1))}
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
+
+    session.refresh(source)
+    assert source.last_fetched_at is not None
+
+
+def test_failed_fetch_does_not_stamp_the_source(session: Session) -> None:
+    source = _add_source(session, "bad", FeedKind.GITHUB, BAD_GITHUB_URL)
+    routes = {BAD_GITHUB_EVENTS_URL: FakeResponse(status_code=500)}
+
+    jobs.fetch_feeds_sync(
+        session, client=as_client(FakeClient(routes)), redis_client=as_redis(FakeRedis())
+    )
+
+    session.refresh(source)
+    assert source.last_fetched_at is None
+
+
+def test_redirect_hops_are_followed_and_revalidated(session: Session) -> None:
+    _add_source(session, "rss", FeedKind.RSS, RSS_URL)
+    final = "https://elsewhere.example.com/real.xml"
+    client = FakeClient(
+        {
+            RSS_URL: FakeResponse(status_code=302, location=final, request_url=RSS_URL),
+            final: FakeResponse(content=RSS_XML),
+        }
+    )
+
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
+
+    assert client.requested == [RSS_URL, final]
+    assert len(_all_items(session)) == 2
+
+
+def test_redirect_into_private_space_is_refused(
+    session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A public URL must not be able to 302 the worker into the private
+    network: the hop is validated before it is requested."""
+    _add_source(session, "rss", FeedKind.RSS, RSS_URL)
+    internal = "http://169.254.169.254/latest/meta-data/"
+    client = FakeClient(
+        {
+            RSS_URL: FakeResponse(status_code=302, location=internal, request_url=RSS_URL),
+            internal: FakeResponse(content=b"secrets"),
+        }
+    )
+
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
+
+    # The internal hop was never requested, and the source is marked failed.
+    assert client.requested == [RSS_URL]
+    assert _all_items(session) == []
+    failures = session.exec(
+        select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
+    ).all()
+    assert len(failures) == 1
