@@ -1,6 +1,11 @@
 import pytest
 
-from pulse.lib.urls import UnsafeUrlError, assert_public_target, validate_feed_url
+from pulse.lib.urls import (
+    UnsafeUrlError,
+    assert_public_target,
+    resolve_public_ip,
+    validate_feed_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -88,3 +93,36 @@ def test_mixed_public_and_private_answers_are_rejected(monkeypatch: pytest.Monke
     )
     with pytest.raises(UnsafeUrlError):
         assert_public_target("https://mixed.example.com/feed")
+
+
+def test_repeated_hung_lookups_do_not_disable_resolution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Hung lookups are abandoned, not queued behind a fixed worker pool: a
+    later healthy lookup must still succeed rather than time out waiting."""
+    import threading
+    import time
+
+    release = threading.Event()
+
+    def hangs(*a: object, **kw: object) -> list:
+        release.wait(30)
+        return []
+
+    monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", hangs)
+    monkeypatch.setattr("pulse.lib.urls.DNS_TIMEOUT_SECONDS", 0.05)
+
+    # More hung lookups than any small pool would have workers for.
+    for _ in range(6):
+        with pytest.raises(UnsafeUrlError, match="timed out"):
+            assert_public_target("https://hung.example.com/feed")
+
+    # A healthy lookup still resolves promptly afterwards.
+    monkeypatch.setattr(
+        "pulse.lib.urls.socket.getaddrinfo",
+        lambda *a, **kw: [(2, 1, 6, "", ("93.184.216.34", 80))],
+    )
+    started = time.monotonic()
+    assert resolve_public_ip("https://healthy.example.com/feed") == "93.184.216.34"
+    assert time.monotonic() - started < 1
+    release.set()

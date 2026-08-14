@@ -16,8 +16,7 @@ inside the private network, so they are an SSRF sink. Three layers guard them:
 
 import ipaddress
 import socket
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeoutError
+import threading
 from urllib.parse import urlparse
 
 ALLOWED_SCHEMES = {"http", "https"}
@@ -27,10 +26,9 @@ BLOCKED_HOSTNAMES = {
     "metadata.google.internal",
 }
 # getaddrinfo takes no timeout argument and can hang on a sick resolver, which
-# would stall the whole (serial) feeds run. Bound it by resolving on a worker
-# thread and giving up on the result.
+# would stall the whole (serial) feeds run. Bound it by resolving on a
+# throwaway daemon thread and abandoning the thread if it overruns.
 DNS_TIMEOUT_SECONDS = 3.0
-_resolver_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pulse-dns")
 
 
 class UnsafeUrlError(ValueError):
@@ -67,13 +65,32 @@ def validate_feed_url(url: str) -> str:
 
 
 def _getaddrinfo(hostname: str) -> list[tuple]:  # type: ignore[type-arg]
-    future = _resolver_pool.submit(socket.getaddrinfo, hostname, None)
-    try:
-        return list(future.result(timeout=DNS_TIMEOUT_SECONDS))
-    except FutureTimeoutError as exc:
-        # The worker thread may still be blocked in the resolver; the run
-        # moves on regardless.
-        raise UnsafeUrlError(f"DNS lookup for '{hostname}' timed out") from exc
+    """Resolve with a deadline.
+
+    A blocked `getaddrinfo` cannot be cancelled, so an overrunning lookup is
+    abandoned rather than waited on. Each call gets its own daemon thread on
+    purpose: a shared, bounded pool would be permanently exhausted by a
+    handful of hung lookups, and every later resolution would then time out
+    waiting for a free worker. An abandoned thread exits on its own once the
+    OS resolver gives up, and holds nothing but its own stack meanwhile.
+    """
+    result: list[tuple] = []  # type: ignore[type-arg]
+    failure: list[BaseException] = []
+
+    def resolve() -> None:
+        try:
+            result.extend(socket.getaddrinfo(hostname, None))
+        except BaseException as exc:  # noqa: BLE001 - relayed to the caller below
+            failure.append(exc)
+
+    thread = threading.Thread(target=resolve, name=f"pulse-dns-{hostname}"[:64], daemon=True)
+    thread.start()
+    thread.join(timeout=DNS_TIMEOUT_SECONDS)
+    if thread.is_alive():
+        raise UnsafeUrlError(f"DNS lookup for '{hostname}' timed out")
+    if failure:
+        raise failure[0]
+    return result
 
 
 def resolve_public_ip(url: str) -> str | None:

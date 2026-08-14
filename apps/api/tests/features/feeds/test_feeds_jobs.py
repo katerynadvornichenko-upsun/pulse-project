@@ -377,3 +377,42 @@ def test_github_object_payload_reports_a_shape_mismatch(session: Session) -> Non
     assert "expected a JSON array" in failure.message
     assert "rate limit" in failure.message
     assert "AttributeError" not in failure.message
+
+
+def test_relative_redirect_keeps_the_original_hostname(session: Session) -> None:
+    """The guarded transport rewrites the request URL to the pinned IP, so
+    response.url carries an address. A relative Location must still resolve
+    against the hostname we asked for, or the next hop loses vhost routing."""
+    _add_source(session, "rss", FeedKind.RSS, RSS_URL)
+    expected_hop = "https://feeds.example.com/real.xml"
+    client = FakeClient(
+        {
+            # request_url mimics the pinned rewrite the transport performs.
+            RSS_URL: FakeResponse(
+                status_code=302,
+                location="/real.xml",
+                request_url="https://93.184.216.34/rss",
+            ),
+            expected_hop: FakeResponse(content=RSS_XML),
+        }
+    )
+
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
+
+    assert client.requested == [RSS_URL, expected_hop]
+    assert len(_all_items(session)) == 2
+
+
+def test_over_redirecting_is_not_reported_as_an_ssrf_rejection(session: Session) -> None:
+    _add_source(session, "rss", FeedKind.RSS, RSS_URL)
+    # A loop: every hop redirects back to the same place.
+    client = FakeClient(
+        {RSS_URL: FakeResponse(status_code=302, location=RSS_URL, request_url=RSS_URL)}
+    )
+
+    jobs.fetch_feeds_sync(session, client=as_client(client), redis_client=as_redis(FakeRedis()))
+
+    failure = session.exec(
+        select(ActivityEvent).where(col(ActivityEvent.action) == "fetch_failed")
+    ).one()
+    assert "too many redirects" in failure.message

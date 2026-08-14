@@ -30,7 +30,7 @@ from sqlmodel import Session, col, select
 from pulse.lib.db import get_engine
 from pulse.lib.http import build_guarded_client
 from pulse.lib.redis import get_redis
-from pulse.lib.urls import UnsafeUrlError, assert_public_target
+from pulse.lib.urls import assert_public_target
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
 
 # Redis key the dashboard endpoint (next slice) reads the cached feed from.
@@ -46,6 +46,14 @@ GITHUB_EVENTS_URL = "https://api.github.com/repos/{owner}/{repo}/events"
 # Redirects are followed by hand so every hop can be re-validated; a public
 # URL must not be able to 302 into private address space.
 MAX_REDIRECTS = 5
+
+
+class FeedFetchError(RuntimeError):
+    """A source responded in a way we cannot use (bad status, over-redirected).
+
+    Distinct from UnsafeUrlError, which means the target itself is off limits:
+    a benign 300 is not an SSRF rejection.
+    """
 
 
 @dataclass
@@ -109,13 +117,16 @@ def _get_checked(
             # so it would otherwise be recorded as a successful empty fetch.
             location = response.headers.get("location")
             if not response.is_redirect or not location:
-                raise UnsafeUrlError(
-                    f"unhandled {response.status_code} response from '{url}'"
-                )
-            url = str(response.url.join(location))
+                raise FeedFetchError(f"unhandled {response.status_code} response from '{url}'")
+            # Resolve against the URL we asked for, not response.url: the
+            # guarded transport rewrites the request to the pinned IP, so
+            # response.url carries the address. Joining a relative Location
+            # against that would drop the hostname and lose name-based
+            # virtual-host routing on the next hop.
+            url = str(httpx.URL(url).join(location))
             continue
         return response
-    raise UnsafeUrlError(f"too many redirects (>{MAX_REDIRECTS})")
+    raise FeedFetchError(f"too many redirects (>{MAX_REDIRECTS})")
 
 
 def _fetch_rss(source: FeedSource, client: httpx.Client) -> list[_Entry]:
@@ -129,9 +140,7 @@ def _fetch_rss(source: FeedSource, client: httpx.Client) -> list[_Entry]:
         external_id = entry.get("id") or entry.get("link")
         if not external_id:
             continue
-        published = _from_struct_time(
-            entry.get("published_parsed") or entry.get("updated_parsed")
-        )
+        published = _from_struct_time(entry.get("published_parsed") or entry.get("updated_parsed"))
         entries.append(
             _Entry(
                 external_id=str(external_id),
@@ -271,9 +280,7 @@ def fetch_feeds_sync(
     # a fake and exercise that guard separately (see lib/test_http.py).
     client = client or build_guarded_client(HTTP_TIMEOUT_SECONDS)
     try:
-        sources = session.exec(
-            select(FeedSource).where(col(FeedSource.enabled).is_(True))
-        ).all()
+        sources = session.exec(select(FeedSource).where(col(FeedSource.enabled).is_(True))).all()
         for source in sources:
             try:
                 entries = _fetch_entries(source, client)
