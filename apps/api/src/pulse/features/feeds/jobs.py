@@ -30,7 +30,7 @@ from sqlmodel import Session, col, select
 from pulse.lib.db import get_engine
 from pulse.lib.http import build_guarded_client
 from pulse.lib.redis import get_redis
-from pulse.lib.urls import assert_public_target
+from pulse.lib.urls import validate_feed_url
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
 
 # Redis key the dashboard endpoint (next slice) reads the cached feed from.
@@ -99,14 +99,19 @@ def _github_events_url(url: str) -> str:
 def _get_checked(
     client: httpx.Client, url: str, headers: dict[str, str] | None = None
 ) -> httpx.Response:
-    """GET `url`, validating the target before every hop.
+    """GET `url`, checking the target before every hop.
 
-    `follow_redirects=False` plus manual hop-following is what makes the
-    re-validation possible: httpx's own redirect handling would connect to a
+    `follow_redirects=False` plus manual hop-following is what makes per-hop
+    checking possible: httpx's own redirect handling would connect to a
     Location we never inspected.
+
+    Only the syntactic check runs here. Resolution and the connect-time IP
+    pin belong to GuardedTransport (lib/http.py), which is authoritative;
+    resolving here as well would mean two lookups per hop and up to two DNS
+    timeouts on a sick resolver.
     """
     for _ in range(MAX_REDIRECTS + 1):
-        assert_public_target(url)
+        validate_feed_url(url)
         response = client.get(
             url, timeout=HTTP_TIMEOUT_SECONDS, headers=headers, follow_redirects=False
         )

@@ -3,15 +3,17 @@
 Feed URLs are supplied through the API and later fetched by the worker from
 inside the private network, so they are an SSRF sink. Three layers guard them:
 
-- `validate_feed_url` is a cheap syntactic check used by the request schemas.
-  It runs no DNS (so the API never blocks on a resolver, and validation stays
-  deterministic offline).
+- `validate_feed_url` is a cheap syntactic check used by the request schemas
+  and by the fetch job on every redirect hop. It runs no DNS, so neither the
+  API nor the test suite ever touches a resolver.
 - `resolve_public_ip` resolves the host, with a timeout, and rejects any
   answer that is not globally routable.
-- `pulse.lib.http.build_guarded_client` pins that resolved address at connect
-  time. Checking without pinning would leave a DNS-rebinding gap: httpx
-  resolves again when it connects, so a short-TTL record can answer public to
-  the check and 127.0.0.1 to the connection.
+- `pulse.lib.http.GuardedTransport` calls `resolve_public_ip` once per
+  connection and pins that address. It is the authoritative check: resolving
+  anywhere else as well would only add a second lookup per request. Checking
+  without pinning would leave a DNS-rebinding gap, since httpx resolves again
+  when it connects, so a short-TTL record could answer public to the check
+  and 127.0.0.1 to the connection.
 """
 
 import ipaddress
@@ -121,10 +123,3 @@ def resolve_public_ip(url: str) -> str | None:
                 f"url resolves to a non-public address ({address}); refusing to fetch"
             )
     return addresses[0]
-
-
-def assert_public_target(url: str) -> None:
-    """Validate and resolve, discarding the address. Used as an early check
-    before a request; `build_guarded_client` performs the authoritative,
-    pinned check at connect time."""
-    resolve_public_ip(url)

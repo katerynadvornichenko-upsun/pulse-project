@@ -1,11 +1,6 @@
 import pytest
 
-from pulse.lib.urls import (
-    UnsafeUrlError,
-    assert_public_target,
-    resolve_public_ip,
-    validate_feed_url,
-)
+from pulse.lib.urls import UnsafeUrlError, resolve_public_ip, validate_feed_url
 
 
 @pytest.mark.parametrize(
@@ -41,7 +36,7 @@ def test_unsafe_urls_rejected(url: str) -> None:
         validate_feed_url(url)
 
 
-def test_assert_public_target_rejects_host_resolving_to_private_ip(
+def test_resolve_rejects_host_resolving_to_private_ip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A public-looking hostname whose DNS answer is internal (rebinding)."""
@@ -50,10 +45,10 @@ def test_assert_public_target_rejects_host_resolving_to_private_ip(
         lambda *a, **kw: [(2, 1, 6, "", ("10.1.2.3", 80))],
     )
     with pytest.raises(UnsafeUrlError):
-        assert_public_target("https://sneaky.example.com/feed")
+        resolve_public_ip("https://sneaky.example.com/feed")
 
 
-def test_assert_public_target_allows_unresolvable_host(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_allows_unresolvable_host(monkeypatch: pytest.MonkeyPatch) -> None:
     """Nothing can be reached at a name that does not resolve, so leave it to
     the HTTP client to fail naturally."""
 
@@ -61,7 +56,7 @@ def test_assert_public_target_allows_unresolvable_host(monkeypatch: pytest.Monke
         raise OSError("no such host")
 
     monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", boom)
-    assert_public_target("https://nonexistent.invalid/feed")
+    resolve_public_ip("https://nonexistent.invalid/feed")
 
 
 def test_slow_resolver_times_out_instead_of_hanging(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -77,7 +72,7 @@ def test_slow_resolver_times_out_instead_of_hanging(monkeypatch: pytest.MonkeyPa
 
     started = time.monotonic()
     with pytest.raises(UnsafeUrlError, match="timed out"):
-        assert_public_target("https://slow.example.com/feed")
+        resolve_public_ip("https://slow.example.com/feed")
     assert time.monotonic() - started < 2
 
 
@@ -92,7 +87,7 @@ def test_mixed_public_and_private_answers_are_rejected(monkeypatch: pytest.Monke
         ],
     )
     with pytest.raises(UnsafeUrlError):
-        assert_public_target("https://mixed.example.com/feed")
+        resolve_public_ip("https://mixed.example.com/feed")
 
 
 def test_repeated_hung_lookups_do_not_disable_resolution(
@@ -115,7 +110,7 @@ def test_repeated_hung_lookups_do_not_disable_resolution(
     # More hung lookups than any small pool would have workers for.
     for _ in range(6):
         with pytest.raises(UnsafeUrlError, match="timed out"):
-            assert_public_target("https://hung.example.com/feed")
+            resolve_public_ip("https://hung.example.com/feed")
 
     # A healthy lookup still resolves promptly afterwards.
     monkeypatch.setattr(

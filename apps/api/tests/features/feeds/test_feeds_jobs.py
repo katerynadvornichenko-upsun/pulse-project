@@ -1,8 +1,13 @@
 """Tests for the feeds fetch worker job.
 
 HTTP is stubbed with a tiny fake httpx client and Redis with an in-memory
-fake, so the suite is deterministic and offline. Covers idempotent upsert on
-refetch, per-source failure isolation, and cache content.
+fake. The job itself performs no DNS: resolution and IP pinning live in
+GuardedTransport, which the injected fake client bypasses. The `no_dns`
+fixture below enforces that, so the suite is genuinely hermetic rather than
+quietly depending on how the host resolver answers example.com names.
+
+Covers idempotent upsert on refetch, per-source failure isolation, redirect
+handling, and cache content.
 """
 
 import json
@@ -131,6 +136,21 @@ def as_client(fake: FakeClient) -> httpx.Client:
 
 def as_redis(fake: FakeRedis) -> Redis:
     return cast(Redis, fake)
+
+
+@pytest.fixture(autouse=True)
+def no_dns(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail loudly if this suite ever reaches for the resolver.
+
+    A real lookup would make these tests depend on the host's DNS: a resolver
+    mapping example.com names to a private address would turn them red with
+    UnsafeUrlError, and a slow one would add DNS_TIMEOUT_SECONDS per hop.
+    """
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        raise AssertionError("feeds job tests must not perform DNS lookups")
+
+    monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", forbidden)
 
 
 def _add_source(session: Session, name: str, kind: FeedKind, url: str) -> FeedSource:
