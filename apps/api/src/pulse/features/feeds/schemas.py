@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -59,3 +60,19 @@ class FeedSourceRead(BaseModel):
     kind: FeedKind
     url: str
     enabled: bool
+
+
+class FeedItemRead(BaseModel):
+    """A fetched feed item, with its source's name denormalised on so the
+    dashboard can render it without a second request."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_id: uuid.UUID
+    source_name: str
+    title: str
+    url: str
+    summary: str
+    published_at: datetime | None
+    fetched_at: datetime

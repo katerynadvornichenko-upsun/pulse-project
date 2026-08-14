@@ -56,10 +56,15 @@ function stubDashboard() {
           },
         ]);
       }
+      if (url.includes("/api/feeds/items")) {
+        return jsonResponse(feedItems);
+      }
       return new Response("not found", { status: 404 });
     }),
   );
 }
+
+let feedItems: unknown[] = [];
 
 function renderPage() {
   const queryClient = new QueryClient({
@@ -96,4 +101,33 @@ test("renders the activity timeline newest data as returned", async () => {
     await screen.findByText("Issue 'Fix login' moved from todo to in_progress"),
   ).toBeTruthy();
   expect(screen.getByText(/Daily rollup: 2 projects/)).toBeTruthy();
+});
+
+test("renders the From your feeds section with items", async () => {
+  feedItems = [
+    {
+      id: "item-1",
+      source_id: "src-1",
+      source_name: "Django Blog",
+      title: "Django 6.0 released",
+      url: "https://example.com/django-6",
+      summary: "",
+      published_at: "2026-07-07T09:00:00Z",
+      fetched_at: "2026-07-07T09:05:00Z",
+    },
+  ];
+  stubDashboard();
+  renderPage();
+
+  const link = (await screen.findByText("Django 6.0 released")) as HTMLAnchorElement;
+  expect(link.getAttribute("href")).toBe("https://example.com/django-6");
+  expect(screen.getByText("Django Blog")).toBeTruthy();
+});
+
+test("shows an empty state when there are no feed items", async () => {
+  feedItems = [];
+  stubDashboard();
+  renderPage();
+
+  expect(await screen.findByText(/No feed items yet/)).toBeTruthy();
 });
