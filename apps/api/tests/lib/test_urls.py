@@ -1,3 +1,13 @@
+"""URL safety checks.
+
+These tests patch socket.getaddrinfo itself because they exercise the
+resolution helper. That is a shared global, so it is only safe here: nothing
+in this module uses the database, and monkeypatch restores it per test.
+Suites that touch the DB must patch pulse.lib.urls._getaddrinfo instead (see
+the no_dns fixture in the feeds job tests) or they will block psycopg from
+resolving its host.
+"""
+
 import pytest
 
 from pulse.lib.urls import UnsafeUrlError, resolve_public_ip, validate_feed_url

@@ -140,17 +140,22 @@ def as_redis(fake: FakeRedis) -> Redis:
 
 @pytest.fixture(autouse=True)
 def no_dns(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail loudly if this suite ever reaches for the resolver.
+    """Fail loudly if this suite ever reaches for the feed resolver.
 
     A real lookup would make these tests depend on the host's DNS: a resolver
     mapping example.com names to a private address would turn them red with
     UnsafeUrlError, and a slow one would add DNS_TIMEOUT_SECONDS per hop.
+
+    Patches pulse's own resolution helper, not socket.getaddrinfo: the latter
+    is a shared global, so blocking it would also break unrelated consumers
+    that legitimately resolve (psycopg dialing localhost when the suite runs
+    against PostgreSQL, as CI does).
     """
 
-    def forbidden(*args: object, **kwargs: object) -> None:
-        raise AssertionError("feeds job tests must not perform DNS lookups")
+    def forbidden(hostname: str) -> list[tuple]:  # type: ignore[type-arg]
+        raise AssertionError(f"feeds job tests must not resolve feed hostnames (got '{hostname}')")
 
-    monkeypatch.setattr("pulse.lib.urls.socket.getaddrinfo", forbidden)
+    monkeypatch.setattr("pulse.lib.urls._getaddrinfo", forbidden)
 
 
 def _add_source(session: Session, name: str, kind: FeedKind, url: str) -> FeedSource:
