@@ -18,6 +18,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from pulse.features.dashboard.jobs import daily_rollup
+from pulse.features.feeds.jobs import fetch_feeds
 from pulse.features.issues.jobs import detect_stale_issues
 from pulse.lib.settings import get_settings
 
@@ -28,9 +29,12 @@ async def ping(ctx: dict[str, Any]) -> str:
 
 
 class WorkerSettings:
-    functions = [ping, daily_rollup, detect_stale_issues]
+    functions = [ping, daily_rollup, detect_stale_issues, fetch_feeds]
     cron_jobs = [
         # H-style offset baked in: 04:23 UTC daily.
-        cron(detect_stale_issues, hour=4, minute=23)
+        cron(detect_stale_issues, hour=4, minute=23),
+        # Hourly, offset a few minutes past the hour to avoid the top-of-hour
+        # thundering herd (mirrors the offset-minute pattern above).
+        cron(fetch_feeds, minute=17),
     ]
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

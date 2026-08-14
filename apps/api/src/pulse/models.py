@@ -130,6 +130,11 @@ class FeedSource(SQLModel, table=True):
     url: str = Field(unique=True, index=True, max_length=670)
     enabled: bool = True
     created_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
+    # When the fetch job last polled this source successfully. Null until the
+    # first successful run; the per-source signal for staleness/backoff logic.
+    last_fetched_at: datetime | None = Field(
+        default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
+    )
 
     items: list["FeedItem"] = Relationship(back_populates="source", cascade_delete=True)
 
@@ -149,6 +154,10 @@ class FeedItem(SQLModel, table=True):
     published_at: datetime | None = Field(
         default=None, sa_column=Column(DateTime(timezone=True), nullable=True)
     )
+    # When this item was FIRST seen. Never re-stamped on refetch: it is the
+    # recency fallback for entries whose feed carries no timestamp, so moving
+    # it would float undated items above genuinely newer ones on every run.
+    # Last-poll time lives on FeedSource.last_fetched_at instead.
     fetched_at: datetime = Field(default_factory=utcnow, sa_column=timestamp_column())
 
     source: FeedSource = Relationship(back_populates="items")
