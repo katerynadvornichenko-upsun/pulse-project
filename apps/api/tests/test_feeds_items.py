@@ -8,10 +8,13 @@ test engine (see conftest.py).
 
 import json
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
+from redis import Redis
 from sqlmodel import Session
 
 from pulse.features.feeds import service
@@ -26,6 +29,12 @@ class FakeRedis:
 
     def get(self, key: str) -> str | None:
         return self._data.get(key)
+
+
+def as_redis(fake: FakeRedis) -> Redis:
+    """Present the test double as the real type the service declares (the
+    AGENTS.md convention; see the feeds job tests for the original)."""
+    return cast(Redis, fake)
 
 
 def _add_source(session: Session, name: str) -> FeedSource:
@@ -58,7 +67,9 @@ def _add_item(
     return item
 
 
-def _cache_payload(entries: list[dict[str, object]]) -> dict[str, str]:
+def _cache_payload(entries: Sequence[Mapping[str, object]]) -> dict[str, str]:
+    # Sequence/Mapping (covariant) rather than list/dict (invariant), so
+    # callers can pass list[dict[str, str]] without a cast.
     from pulse.features.feeds.jobs import CACHE_KEY
 
     return {CACHE_KEY: json.dumps(entries)}
@@ -80,7 +91,7 @@ def test_warm_cache_is_served_without_touching_the_db(session: Session) -> None:
     }
     redis = FakeRedis(_cache_payload([entry]))
 
-    items = service.list_latest_items(session, 20, redis_client=redis)  # type: ignore[arg-type]
+    items = service.list_latest_items(session, 20, redis_client=as_redis(redis))
 
     assert [item.title for item in items] == ["Only in the cache"]
     assert items[0].source_name == "Cached Source"
@@ -103,7 +114,7 @@ def test_warm_cache_respects_limit(session: Session) -> None:
     ]
     redis = FakeRedis(_cache_payload(entries))
 
-    items = service.list_latest_items(session, 2, redis_client=redis)  # type: ignore[arg-type]
+    items = service.list_latest_items(session, 2, redis_client=as_redis(redis))
 
     assert [item.title for item in items] == ["item-0", "item-1"]
 
@@ -126,7 +137,7 @@ def test_cold_cache_falls_back_to_db_ordered_newest_first(session: Session) -> N
     )
 
     # Empty cache -> DB fallback.
-    items = service.list_latest_items(session, 20, redis_client=FakeRedis())  # type: ignore[arg-type]
+    items = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis()))
 
     assert [item.title for item in items] == ["Newer", "Older"]
     assert items[0].source_name == "src"
@@ -138,7 +149,7 @@ def test_cold_cache_tiebreaks_on_id_desc(session: Session) -> None:
     a = _add_item(session, source, external_id="a", title="A", published_at=shared)
     b = _add_item(session, source, external_id="b", title="B", published_at=shared)
 
-    items = service.list_latest_items(session, 20, redis_client=FakeRedis())  # type: ignore[arg-type]
+    items = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis()))
 
     expected = sorted([a, b], key=lambda item: item.id, reverse=True)
     assert [item.id for item in items] == [item.id for item in expected]
@@ -155,7 +166,7 @@ def test_db_fallback_respects_limit(session: Session) -> None:
             published_at=datetime(2026, 1, n + 1, tzinfo=timezone.utc),
         )
 
-    items = service.list_latest_items(session, 3, redis_client=FakeRedis())  # type: ignore[arg-type]
+    items = service.list_latest_items(session, 3, redis_client=as_redis(FakeRedis()))
 
     assert len(items) == 3
     assert [item.title for item in items] == ["item-4", "item-3", "item-2"]

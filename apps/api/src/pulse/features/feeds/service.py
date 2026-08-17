@@ -98,7 +98,10 @@ def _cached_items(redis_client: Redis) -> list[FeedItemRead] | None:
         raw = redis_client.get(CACHE_KEY)
     except RedisError:
         return None
-    if raw is None:
+    # redis-py types get() as ResponseT, a union that includes Awaitable (the
+    # async client shares the annotation). Our client is sync with
+    # decode_responses=True, so anything but str/bytes means no usable cache.
+    if not isinstance(raw, (str, bytes, bytearray)):
         return None
     try:
         payload = json.loads(raw)
