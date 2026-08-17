@@ -201,6 +201,27 @@ export interface paths {
         patch: operations["update_source_api_feeds_sources__source_id__patch"];
         trace?: never;
     };
+    "/api/feeds/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Items
+         * @description Newest feed items first. Served from the Redis cache when warm, falling
+         *     back to the read replica on a cold cache.
+         */
+        get: operations["list_items_api_feeds_items_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/dashboard/stats": {
         parameters: {
             query?: never;
@@ -288,6 +309,38 @@ export interface components {
             overdue: number;
             /** Activity Last 7 Days */
             activity_last_7_days: number;
+        };
+        /**
+         * FeedItemRead
+         * @description A fetched feed item, with its source's name denormalised on so the
+         *     dashboard can render it without a second request.
+         */
+        FeedItemRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Source Id
+             * Format: uuid
+             */
+            source_id: string;
+            /** Source Name */
+            source_name: string;
+            /** Title */
+            title: string;
+            /** Url */
+            url: string;
+            /** Summary */
+            summary: string;
+            /** Published At */
+            published_at: string | null;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
         };
         /**
          * FeedKind
@@ -1157,6 +1210,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedSourceRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_items_api_feeds_items_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedItemRead"][];
                 };
             };
             /** @description Validation Error */

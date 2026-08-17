@@ -9,7 +9,12 @@ export type Issue = components["schemas"]["IssueRead"];
 export type Label = components["schemas"]["LabelRead"];
 export type IssueStatus = components["schemas"]["IssueStatus"];
 export type IssuePriority = components["schemas"]["IssuePriority"];
+export type FeedItem = components["schemas"]["FeedItemRead"];
+export type FeedSource = components["schemas"]["FeedSourceRead"];
+export type FeedKind = components["schemas"]["FeedKind"];
 export type Health = { status: string; version: string };
+
+export const FEED_KINDS: FeedKind[] = ["rss", "github"];
 
 export const ISSUE_STATUSES: IssueStatus[] = [
   "backlog",
@@ -53,6 +58,24 @@ export const api = {
     stats: () => request<DashboardStats>("/api/dashboard/stats"),
     activity: (limit = 20) =>
       request<ActivityEvent[]>(`/api/dashboard/activity?limit=${limit}`),
+  },
+  feeds: {
+    items: (limit = 20) => request<FeedItem[]>(`/api/feeds/items?limit=${limit}`),
+    sources: {
+      list: () => request<FeedSource[]>("/api/feeds/sources"),
+      create: (data: { name: string; kind: FeedKind; url: string }) =>
+        request<FeedSource>("/api/feeds/sources", {
+          method: "POST",
+          body: JSON.stringify(data),
+        }),
+      setEnabled: (id: string, enabled: boolean) =>
+        request<FeedSource>(`/api/feeds/sources/${id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ enabled }),
+        }),
+      delete: (id: string) =>
+        request<void>(`/api/feeds/sources/${id}`, { method: "DELETE" }),
+    },
   },
   projects: {
     list: () => request<Project[]>("/api/projects"),
