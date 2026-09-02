@@ -11,7 +11,7 @@ duplicates rows, and caches the newest items as JSON in Redis for the
 dashboard endpoint to read.
 """
 
-import asyncio
+## import asyncio
 import calendar
 import contextlib
 import json
