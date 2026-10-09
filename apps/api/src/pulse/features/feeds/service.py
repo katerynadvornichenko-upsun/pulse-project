@@ -1,11 +1,15 @@
+import json
 import uuid
 
+from redis import Redis, RedisError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from pulse.features.feeds.schemas import FeedSourceCreate, FeedSourceUpdate
+from pulse.features.feeds.jobs import CACHE_KEY
+from pulse.features.feeds.schemas import FeedItemRead, FeedSourceCreate, FeedSourceUpdate
 from pulse.lib.errors import ConflictError, NotFoundError
-from pulse.models import ActivityEvent, FeedSource
+from pulse.lib.redis import get_redis
+from pulse.models import ActivityEvent, FeedItem, FeedSource
 
 
 def _record(session: Session, source: FeedSource, action: str) -> None:
@@ -82,6 +86,65 @@ def update_source(session: Session, source_id: uuid.UUID, data: FeedSourceUpdate
     _commit_or_conflict(session, source.url)
     session.refresh(source)
     return source
+
+
+def _cached_items(redis_client: Redis) -> list[FeedItemRead] | None:
+    """Return the newest items from the Redis cache, or None on a cold cache.
+
+    A Redis outage or malformed payload is treated as a cache miss (None) so
+    the caller falls back to the database rather than failing the request.
+    """
+    try:
+        raw = redis_client.get(CACHE_KEY)
+    except RedisError:
+        return None
+    # redis-py types get() as ResponseT, a union that includes Awaitable (the
+    # async client shares the annotation). Our client is sync with
+    # decode_responses=True, so anything but str/bytes means no usable cache.
+    if not isinstance(raw, (str, bytes, bytearray)):
+        return None
+    try:
+        payload = json.loads(raw)
+        return [FeedItemRead.model_validate(entry) for entry in payload]
+    except (ValueError, TypeError):
+        return None
+
+
+def _db_latest_items(session: Session, limit: int) -> list[FeedItemRead]:
+    """Newest items from the primary/replica DB, joined to their source name.
+
+    Ordered `published_at DESC` with an `id` tiebreak so the limit boundary is
+    stable across reads (the dashboard-activity precedent, AGENTS.md)."""
+    rows = session.exec(
+        select(FeedItem, FeedSource.name)
+        .join(FeedSource, col(FeedItem.source_id) == col(FeedSource.id))
+        .order_by(col(FeedItem.published_at).desc(), col(FeedItem.id).desc())
+        .limit(limit)
+    ).all()
+    return [
+        FeedItemRead(
+            id=item.id,
+            source_id=item.source_id,
+            source_name=source_name,
+            title=item.title,
+            url=item.url,
+            summary=item.summary,
+            published_at=item.published_at,
+            fetched_at=item.fetched_at,
+        )
+        for item, source_name in rows
+    ]
+
+
+def list_latest_items(
+    session: Session, limit: int, *, redis_client: Redis | None = None
+) -> list[FeedItemRead]:
+    """Newest feed items first, served from the Redis cache when warm and
+    falling back to the database on a cold cache."""
+    cached = _cached_items(redis_client or get_redis())
+    if cached is not None:
+        return cached[:limit]
+    return _db_latest_items(session, limit)
 
 
 def delete_source(session: Session, source_id: uuid.UUID) -> None:

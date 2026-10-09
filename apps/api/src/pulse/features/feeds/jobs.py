@@ -242,6 +242,9 @@ def _serialize(item: FeedItem) -> dict[str, Any]:
     return {
         "id": str(item.id),
         "source_id": str(item.source_id),
+        # Denormalised so the read endpoint can render the source name without
+        # a join on the warm-cache path.
+        "source_name": item.source.name,
         "external_id": item.external_id,
         "title": item.title,
         "url": item.url,
