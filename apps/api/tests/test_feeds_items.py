@@ -347,3 +347,30 @@ def test_web_item_links_are_kept(session: Session) -> None:
     _add_item(session, source, external_id="ok", title="Fine", published_at=None)
     items = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis()))
     assert items[0].url == "https://src.example/ok"
+
+
+def test_entry_under_the_pre_v2_cache_key_is_ignored(session: Session) -> None:
+    """A 50-item payload written by the previous release under the old key must
+    not be served after deploy: the read path falls back to the DB instead."""
+    source = _add_source(session, "src")
+    _add_item(session, source, external_id="db", title="From the DB", published_at=None)
+    legacy = {
+        "feeds:latest": json.dumps(
+            [
+                {
+                    "id": str(uuid.uuid4()),
+                    "source_id": str(uuid.uuid4()),
+                    "source_name": "Stale",
+                    "title": "From the old cache",
+                    "url": "https://old.example/1",
+                    "summary": "",
+                    "published_at": None,
+                    "fetched_at": "2026-01-01T00:00:00+00:00",
+                }
+            ]
+        )
+    }
+
+    items = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis(legacy)))
+
+    assert [item.title for item in items] == ["From the DB"]

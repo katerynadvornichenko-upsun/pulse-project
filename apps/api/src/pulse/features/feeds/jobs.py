@@ -34,7 +34,11 @@ from pulse.lib.urls import validate_feed_url
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
 
 # Redis key the dashboard endpoint (next slice) reads the cached feed from.
-CACHE_KEY = "feeds:latest"
+# Versioned: bump the suffix whenever the cached payload's shape, ordering, or
+# size changes, so new code never serves an entry written under the old rules
+# (the old key simply expires on its own TTL). v2: 100 items, shared
+# latest_items_order(), source_name included.
+CACHE_KEY = "feeds:latest:v2"
 # How many of the newest items to cache. Also the upper bound of
 # GET /api/feeds/items?limit= (router.py), so a warm cache can always satisfy
 # any request the endpoint accepts and warm/cold responses never differ in size.
