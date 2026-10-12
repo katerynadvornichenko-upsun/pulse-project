@@ -18,6 +18,7 @@ from redis import Redis
 from sqlmodel import Session
 
 from pulse.features.feeds import service
+from pulse.features.feeds.schemas import FeedItemRead
 from pulse.models import FeedItem, FeedKind, FeedSource
 
 
@@ -213,3 +214,136 @@ def test_items_limit_bounds(client: TestClient, monkeypatch: pytest.MonkeyPatch)
     # Out of range is rejected by the Query bounds (ge=1, le=100).
     assert client.get("/api/feeds/items?limit=0").status_code == 422
     assert client.get("/api/feeds/items?limit=101").status_code == 422
+
+
+# --- Warm and cold paths agree (PR #21 review) --------------------------------
+
+
+def _warm(session: Session) -> FakeRedis:
+    """Build the cache exactly as the warming job does, from current DB rows."""
+    from pulse.features.feeds.jobs import CACHE_KEY, _latest_payload
+
+    return FakeRedis({CACHE_KEY: json.dumps(_latest_payload(session))})
+
+
+def _ids(items: Sequence[FeedItemRead]) -> list[uuid.UUID]:
+    return [item.id for item in items]
+
+
+def test_warm_and_cold_return_the_same_items_including_undated(session: Session) -> None:
+    """Both paths share one ordering, so the top-N cannot depend on whether
+    the cache happens to be warm. Undated items rank by fetch time on both
+    (no reliance on backend NULL placement, which differs on PostgreSQL)."""
+    source = _add_source(session, "src")
+    for n in range(4):
+        _add_item(
+            session,
+            source,
+            external_id=f"dated-{n}",
+            title=f"dated-{n}",
+            published_at=datetime(2026, 1, n + 1, tzinfo=timezone.utc),
+        )
+    for n in range(3):
+        _add_item(
+            session, source, external_id=f"undated-{n}", title=f"undated-{n}", published_at=None
+        )
+
+    for limit in (1, 3, 5, 7, 20):
+        warm = service.list_latest_items(session, limit, redis_client=as_redis(_warm(session)))
+        cold = service.list_latest_items(session, limit, redis_client=as_redis(FakeRedis()))
+        assert _ids(warm) == _ids(cold), f"warm/cold diverge at limit={limit}"
+
+
+def test_warm_cache_serves_every_limit_the_endpoint_accepts(session: Session) -> None:
+    """The cache holds as many items as the endpoint's maximum limit, so a
+    large request returns the same count warm or cold."""
+    from pulse.features.feeds.jobs import CACHE_LIMIT
+
+    source = _add_source(session, "src")
+    for n in range(CACHE_LIMIT):
+        _add_item(
+            session,
+            source,
+            external_id=f"e-{n}",
+            title=f"item-{n}",
+            published_at=datetime(2026, 1, 1, tzinfo=timezone.utc).replace(
+                minute=n % 60, hour=n // 60
+            ),
+        )
+
+    warm = service.list_latest_items(session, CACHE_LIMIT, redis_client=as_redis(_warm(session)))
+    cold = service.list_latest_items(session, CACHE_LIMIT, redis_client=as_redis(FakeRedis()))
+    assert len(warm) == len(cold) == CACHE_LIMIT
+    assert _ids(warm) == _ids(cold)
+
+
+def test_endpoint_limit_bound_matches_the_cache_size(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pulse.features.feeds.jobs import CACHE_LIMIT
+
+    _stub_cache(monkeypatch, FakeRedis())
+    assert client.get(f"/api/feeds/items?limit={CACHE_LIMIT}").status_code == 200
+    assert client.get(f"/api/feeds/items?limit={CACHE_LIMIT + 1}").status_code == 422
+
+
+def test_cache_warming_does_not_lazy_load_sources(session: Session) -> None:
+    """One query for the whole payload, not one per item (N+1)."""
+    from sqlalchemy import event
+
+    from pulse.features.feeds.jobs import _latest_payload
+
+    for n in range(3):
+        source = _add_source(session, f"src{n}")
+        _add_item(session, source, external_id="e", title=f"t{n}", published_at=None)
+    session.expire_all()  # as after the job's per-source commits
+
+    statements: list[str] = []
+    engine = session.get_bind()
+
+    def count(conn: object, cursor: object, statement: str, *args: object) -> None:
+        statements.append(statement)
+
+    event.listen(engine, "before_cursor_execute", count)
+    try:
+        payload = _latest_payload(session)
+    finally:
+        event.remove(engine, "before_cursor_execute", count)
+
+    assert len(payload) == 3
+    assert {entry["source_name"] for entry in payload} == {"src0", "src1", "src2"}
+    assert len([s for s in statements if s.lstrip().upper().startswith("SELECT")]) == 1
+
+
+# --- Item links are untrusted (stored-XSS guard) -------------------------------
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        "javascript:alert(document.cookie)",
+        " JavaScript:alert(1)",
+        "data:text/html,<script>alert(1)</script>",
+        "vbscript:msgbox(1)",
+        "relative/path",
+    ],
+)
+def test_non_web_item_links_are_blanked(session: Session, link: str) -> None:
+    source = _add_source(session, "src")
+    item = _add_item(session, source, external_id="x", title="Evil", published_at=None)
+    item.url = link
+    session.add(item)
+    session.commit()
+
+    cold = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis()))
+    # The warm path validates the cached JSON through the same schema.
+    warm = service.list_latest_items(session, 20, redis_client=as_redis(_warm(session)))
+
+    assert cold[0].url == "" and warm[0].url == ""
+
+
+def test_web_item_links_are_kept(session: Session) -> None:
+    source = _add_source(session, "src")
+    _add_item(session, source, external_id="ok", title="Fine", published_at=None)
+    items = service.list_latest_items(session, 20, redis_client=as_redis(FakeRedis()))
+    assert items[0].url == "https://src.example/ok"

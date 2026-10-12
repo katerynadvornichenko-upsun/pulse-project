@@ -5,7 +5,7 @@ from redis import Redis, RedisError
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, col, select
 
-from pulse.features.feeds.jobs import CACHE_KEY
+from pulse.features.feeds.jobs import CACHE_KEY, latest_items_order
 from pulse.features.feeds.schemas import FeedItemRead, FeedSourceCreate, FeedSourceUpdate
 from pulse.lib.errors import ConflictError, NotFoundError
 from pulse.lib.redis import get_redis
@@ -113,12 +113,12 @@ def _cached_items(redis_client: Redis) -> list[FeedItemRead] | None:
 def _db_latest_items(session: Session, limit: int) -> list[FeedItemRead]:
     """Newest items from the primary/replica DB, joined to their source name.
 
-    Ordered `published_at DESC` with an `id` tiebreak so the limit boundary is
-    stable across reads (the dashboard-activity precedent, AGENTS.md)."""
+    Uses the same ordering as the cache-warming job (`latest_items_order`), so
+    a cold-cache response ranks exactly like a warm one."""
     rows = session.exec(
         select(FeedItem, FeedSource.name)
         .join(FeedSource, col(FeedItem.source_id) == col(FeedSource.id))
-        .order_by(col(FeedItem.published_at).desc(), col(FeedItem.id).desc())
+        .order_by(*latest_items_order())
         .limit(limit)
     ).all()
     return [

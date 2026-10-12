@@ -245,15 +245,15 @@ def test_disabled_sources_are_skipped(session: Session) -> None:
 
 def test_cache_holds_the_newest_items_with_ttl(session: Session) -> None:
     _add_source(session, "gh", FeedKind.GITHUB, GITHUB_URL)
-    routes = {GITHUB_EVENTS_URL: FakeResponse(json_data=_events(60))}
+    routes = {GITHUB_EVENTS_URL: FakeResponse(json_data=_events(jobs.CACHE_LIMIT + 10))}
     redis = FakeRedis()
 
     payload = jobs.fetch_feeds_sync(
         session, client=as_client(FakeClient(routes)), redis_client=as_redis(redis)
     )
 
-    # All 60 upserted, but only the newest CACHE_LIMIT are cached.
-    assert len(_all_items(session)) == 60
+    # All CACHE_LIMIT + 10 upserted, but only the newest CACHE_LIMIT are cached.
+    assert len(_all_items(session)) == jobs.CACHE_LIMIT + 10
     assert len(payload) == jobs.CACHE_LIMIT
 
     raw = redis.get(jobs.CACHE_KEY)
@@ -265,7 +265,7 @@ def test_cache_holds_the_newest_items_with_ttl(session: Session) -> None:
     # Newest first, and the oldest 10 events fell off the end.
     published = [entry["published_at"] for entry in cached]
     assert published == sorted(published, reverse=True)
-    assert cached[0]["external_id"] == "e59"
+    assert cached[0]["external_id"] == f"e{jobs.CACHE_LIMIT + 9}"
     assert all(entry["external_id"] != "e0" for entry in cached)
 
 

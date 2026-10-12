@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Query, status
 
 from pulse.features.feeds import service
+from pulse.features.feeds.jobs import CACHE_LIMIT
 from pulse.features.feeds.schemas import (
     FeedItemRead,
     FeedSourceCreate,
@@ -40,7 +41,7 @@ def delete_source(source_id: uuid.UUID, session: SessionDep) -> None:
 
 @router.get("/items", response_model=list[FeedItemRead])
 def list_items(
-    session: ReadSessionDep, limit: int = Query(default=20, ge=1, le=100)
+    session: ReadSessionDep, limit: int = Query(default=20, ge=1, le=CACHE_LIMIT)
 ) -> list[FeedItemRead]:
     """Newest feed items first. Served from the Redis cache when warm, falling
     back to the read replica on a cold cache."""
