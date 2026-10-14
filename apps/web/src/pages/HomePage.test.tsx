@@ -3,7 +3,7 @@ import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, test, vi } from "vitest";
 
-import HomePage from "./HomePage";
+import HomePage, { safeHref } from "./HomePage";
 
 afterEach(() => {
   // Auto-cleanup needs vitest globals, which this project doesn't enable.
@@ -56,10 +56,15 @@ function stubDashboard() {
           },
         ]);
       }
+      if (url.includes("/api/feeds/items")) {
+        return jsonResponse(feedItems);
+      }
       return new Response("not found", { status: 404 });
     }),
   );
 }
+
+let feedItems: unknown[] = [];
 
 function renderPage() {
   const queryClient = new QueryClient({
@@ -96,4 +101,65 @@ test("renders the activity timeline newest data as returned", async () => {
     await screen.findByText("Issue 'Fix login' moved from todo to in_progress"),
   ).toBeTruthy();
   expect(screen.getByText(/Daily rollup: 2 projects/)).toBeTruthy();
+});
+
+test("renders the From your feeds section with items", async () => {
+  feedItems = [
+    {
+      id: "item-1",
+      source_id: "src-1",
+      source_name: "Django Blog",
+      title: "Django 6.0 released",
+      url: "https://example.com/django-6",
+      summary: "",
+      published_at: "2026-07-07T09:00:00Z",
+      fetched_at: "2026-07-07T09:05:00Z",
+    },
+  ];
+  stubDashboard();
+  renderPage();
+
+  const link = (await screen.findByText("Django 6.0 released")) as HTMLAnchorElement;
+  expect(link.getAttribute("href")).toBe("https://example.com/django-6");
+  expect(screen.getByText("Django Blog")).toBeTruthy();
+});
+
+test("shows an empty state when there are no feed items", async () => {
+  feedItems = [];
+  stubDashboard();
+  renderPage();
+
+  expect(await screen.findByText(/No feed items yet/)).toBeTruthy();
+});
+
+test("a non-web feed link is rendered as plain text, never as an href", async () => {
+  feedItems = [
+    {
+      id: "item-evil",
+      source_id: "src-1",
+      source_name: "Hostile Feed",
+      title: "Click me",
+      url: "javascript:alert(document.cookie)",
+      summary: "",
+      published_at: "2026-07-07T09:00:00Z",
+      fetched_at: "2026-07-07T09:05:00Z",
+    },
+  ];
+  stubDashboard();
+  renderPage();
+
+  const title = await screen.findByText("Click me");
+  expect(title.tagName).not.toBe("A");
+  expect(title.closest("a")).toBeNull();
+  expect(document.querySelector('a[href^="javascript:"]')).toBeNull();
+});
+
+test("safeHref allows only http and https", () => {
+  expect(safeHref("https://example.com/a")).toBe("https://example.com/a");
+  expect(safeHref("http://example.com/a")).toBe("http://example.com/a");
+  expect(safeHref("javascript:alert(1)")).toBeUndefined();
+  expect(safeHref(" JavaScript:alert(1)")).toBeUndefined();
+  expect(safeHref("data:text/html,<script>1</script>")).toBeUndefined();
+  expect(safeHref("")).toBeUndefined();
+  expect(safeHref("not a url")).toBeUndefined();
 });

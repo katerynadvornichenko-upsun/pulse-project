@@ -23,7 +23,22 @@ Run these from the directory named in each line.
   frontend API types. See the Makefile for the rest.
 
 A change is mergeable when lint, typecheck, and tests pass in both apps.
-CI runs exactly these checks.
+CI runs exactly these checks. Run all three locally before pushing — from
+`apps/api`, `uv run ruff check . && uv run pyright && uv run pytest` — and
+run them through uv, not a system Python: `uv run` uses the project's
+`.venv`, which is what makes pyright resolve dependencies the way CI does.
+A green pytest alone is not a proxy for CI: pyright failures are the most
+common CI-only surprise.
+
+Never hand-write generated or resolved artifacts. `apps/api/uv.lock` comes
+from `uv lock` (or `uv add`), and `apps/web/src/lib/api-types.gen.ts` comes
+from `make gen-types`; entries written by hand contain fabricated hashes or
+drift from the generator's real output, and both have broken CI before.
+
+In tests, present a test double as the real type its target declares with a
+small `cast()` helper (see `as_client`/`as_redis` in
+`apps/api/tests/features/feeds/test_feeds_jobs.py`) instead of scattering
+`# type: ignore` on call sites or widening production signatures.
 
 ## How to add a feature slice
 

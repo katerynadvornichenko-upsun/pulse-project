@@ -1,6 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router";
 
 import { api } from "../lib/api";
+
+/** Feed item links are third-party content. Only http(s) may become an href:
+ * a javascript: or data: URL would run script in our origin when clicked.
+ * The API already blanks other schemes; this is defence in depth. */
+export function safeHref(url: string): string | undefined {
+  try {
+    const { protocol } = new URL(url);
+    return protocol === "http:" || protocol === "https:" ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 function StatCard({ label, value }: { label: string; value: number | string }) {
   return (
@@ -17,6 +30,10 @@ export default function HomePage() {
   const activity = useQuery({
     queryKey: ["dashboard-activity"],
     queryFn: () => api.dashboard.activity(20),
+  });
+  const feed = useQuery({
+    queryKey: ["dashboard-feed"],
+    queryFn: () => api.feeds.items(20),
   });
 
   return (
@@ -84,6 +101,56 @@ export default function HomePage() {
                 </time>
               </li>
             ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-medium uppercase tracking-wide text-slate-500">
+          From your feeds
+        </h2>
+        {feed.isPending && <p>Loading…</p>}
+        {feed.isError && <p className="text-red-600">Failed to load feeds</p>}
+        {feed.data && feed.data.length === 0 && (
+          <p className="text-slate-500">
+            No feed items yet. Add a source on the{" "}
+            <Link to="/feeds" className="underline">
+              Feeds
+            </Link>{" "}
+            page.
+          </p>
+        )}
+        {feed.data && feed.data.length > 0 && (
+          <ul className="divide-y divide-slate-100">
+            {feed.data.map((item) => {
+              const href = safeHref(item.url);
+              return (
+              <li key={item.id} className="flex items-baseline gap-3 py-2">
+                <span className="flex-1 text-sm">
+                  {href ? (
+                    <a
+                      href={href}
+                      className="font-medium hover:underline"
+                      rel="noopener noreferrer"
+                    >
+                      {item.title}
+                    </a>
+                  ) : (
+                    <span className="font-medium">{item.title}</span>
+                  )}
+                  <span className="ml-2 text-slate-500">{item.source_name}</span>
+                </span>
+                {item.published_at && (
+                  <time
+                    className="whitespace-nowrap text-xs text-slate-500"
+                    dateTime={item.published_at}
+                  >
+                    {new Date(item.published_at).toLocaleString()}
+                  </time>
+                )}
+              </li>
+              );
+            })}
           </ul>
         )}
       </section>

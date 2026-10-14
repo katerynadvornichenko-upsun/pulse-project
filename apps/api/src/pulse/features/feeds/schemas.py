@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -59,3 +61,29 @@ class FeedSourceRead(BaseModel):
     kind: FeedKind
     url: str
     enabled: bool
+
+
+class FeedItemRead(BaseModel):
+    """A fetched feed item, with its source's name denormalised on so the
+    dashboard can render it without a second request."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    source_id: uuid.UUID
+    source_name: str
+    title: str
+    url: str
+    summary: str
+    published_at: datetime | None
+    fetched_at: datetime
+
+    @field_validator("url")
+    @classmethod
+    def only_web_links(cls, value: str) -> str:
+        # Item links are third-party feed content, never validated on the way
+        # in. Anything but http(s) (javascript:, data:, vbscript:, ...) would
+        # become a clickable script URL in the dashboard, so it is blanked.
+        # Applied on read, it also covers payloads already sitting in the cache.
+        scheme = urlparse(value.strip()).scheme.lower()
+        return value if scheme in ("http", "https") else ""

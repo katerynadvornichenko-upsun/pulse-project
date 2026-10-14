@@ -34,9 +34,15 @@ from pulse.lib.urls import validate_feed_url
 from pulse.models import ActivityEvent, FeedItem, FeedKind, FeedSource, utcnow
 
 # Redis key the dashboard endpoint (next slice) reads the cached feed from.
-CACHE_KEY = "feeds:latest"
-# How many of the newest items to cache.
-CACHE_LIMIT = 50
+# Versioned: bump the suffix whenever the cached payload's shape, ordering, or
+# size changes, so new code never serves an entry written under the old rules
+# (the old key simply expires on its own TTL). v2: 100 items, shared
+# latest_items_order(), source_name included.
+CACHE_KEY = "feeds:latest:v2"
+# How many of the newest items to cache. Also the upper bound of
+# GET /api/feeds/items?limit= (router.py), so a warm cache can always satisfy
+# any request the endpoint accepts and warm/cold responses never differ in size.
+CACHE_LIMIT = 100
 # TTL for the cache entry; matches the hourly refresh cadence with headroom so
 # a skipped run still serves slightly-stale data rather than nothing.
 CACHE_TTL_SECONDS = 60 * 90
@@ -238,10 +244,27 @@ def _upsert(session: Session, source: FeedSource, entries: list[_Entry]) -> None
             session.add(existing)
 
 
-def _serialize(item: FeedItem) -> dict[str, Any]:
+def latest_items_order() -> tuple[Any, Any]:
+    """The single definition of "newest first" for feed items.
+
+    Shared by the cache-warming query here and the read endpoint's cold-cache
+    fallback (service.py), so warm and cold responses rank identically.
+    Coalescing with fetched_at (never null) ranks undated entries by when we
+    first saw them, and also sidesteps backend-specific NULL placement
+    (PostgreSQL sorts NULLs first on DESC, SQLite last). `id` breaks ties so
+    the limit boundary is stable across reads.
+    """
+    recency = func.coalesce(col(FeedItem.published_at), col(FeedItem.fetched_at))
+    return recency.desc(), col(FeedItem.id).desc()
+
+
+def _serialize(item: FeedItem, source_name: str) -> dict[str, Any]:
     return {
         "id": str(item.id),
         "source_id": str(item.source_id),
+        # Denormalised so the read endpoint can render the source name without
+        # a join on the warm-cache path.
+        "source_name": source_name,
         "external_id": item.external_id,
         "title": item.title,
         "url": item.url,
@@ -252,11 +275,16 @@ def _serialize(item: FeedItem) -> dict[str, Any]:
 
 
 def _latest_payload(session: Session) -> list[dict[str, Any]]:
-    # Newest first: order by publish time, falling back to fetch time for
-    # entries whose feed carried no timestamp.
-    recency = func.coalesce(col(FeedItem.published_at), col(FeedItem.fetched_at))
-    items = session.exec(select(FeedItem).order_by(recency.desc()).limit(CACHE_LIMIT)).all()
-    return [_serialize(item) for item in items]
+    # The source name is selected in the same query (not read through the
+    # lazy `item.source` relationship), so serializing costs no per-item
+    # SELECTs and never depends on the instances still being attached.
+    rows = session.exec(
+        select(FeedItem, FeedSource.name)
+        .join(FeedSource, col(FeedItem.source_id) == col(FeedSource.id))
+        .order_by(*latest_items_order())
+        .limit(CACHE_LIMIT)
+    ).all()
+    return [_serialize(item, source_name) for item, source_name in rows]
 
 
 def _write_cache(session: Session, redis_client: Redis) -> list[dict[str, Any]]:
