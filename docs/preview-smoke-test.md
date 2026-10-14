@@ -14,8 +14,11 @@ upsun activity:list --limit 3        # the push activity ended with result: succ
 
 If the build failed, `upsun activity:log` on the failed activity shows which
 hook broke. The two most likely first-run failures are the runtime versions
-(`python:3.12` / `nodejs:20` in `.upsun/config.yaml`) and the uv install in
+(`python:3.12` / `nodejs:24` in `.upsun/config.yaml`) and the uv install in
 the api build hook.
+
+In the Console, the environment overview's Tasks card should list
+`performance-agent` (see `docs/performance-agent.md`).
 
 ## 2. Migrations ran in the deploy hook
 

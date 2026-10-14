@@ -62,7 +62,7 @@ applications:
           start: ".venv/bin/python -m pulse.jobs.enqueue_rollup"
 
   web:
-    type: "nodejs:20"
+    type: "nodejs:24"
     source:
       root: apps/web
 
@@ -151,3 +151,10 @@ routes:
     upstream: "api:http"
     cache:
       enabled: false
+
+# Upsun Cloud performance agent. Run it against `api` or `queue` (not `web`,
+# which is a static build). Needs the env:ANTHROPIC_API_KEY sensitive project
+# variable. See docs/performance-agent.md.
+tasks:
+  performance-agent:
+    base: "performance-agent"

@@ -15,7 +15,7 @@ compile time.
 
 ## Local development
 
-You need Python 3.10+ with [uv](https://docs.astral.sh/uv/), Node 20+, and a
+You need Python 3.10+ with [uv](https://docs.astral.sh/uv/), Node 24+, and a
 local PostgreSQL and Redis (Docker works fine):
 
 ```sh

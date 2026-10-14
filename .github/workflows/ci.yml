@@ -56,7 +56,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Keep in step with the `web` app's `type` in .upsun/config.yaml, so
+          # green CI means the runtime that actually ships was tested.
+          node-version: 24
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - name: Install dependencies
