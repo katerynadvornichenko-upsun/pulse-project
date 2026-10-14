@@ -20,8 +20,15 @@ happens outside the repo:
 
 ```sh
 upsun variable:create -p <project-id> --level project --name env:ANTHROPIC_API_KEY \
-    --value "<key>" --sensitive true --visible-runtime true
+    --sensitive true --visible-runtime true
 ```
+
+The command deliberately has no `--value`: the CLI prompts for it, so the key
+never appears on a command line. Passing `--value "<key>"` would leave the
+secret in your shell history and visible in process listings (`ps`) while the
+command runs; `--sensitive true` only protects the stored variable, not your
+terminal. Alternatively, create the variable in the Console under the
+project's Settings > Variables, marked sensitive.
 
 Never commit the key, and never pass it inline in a task run's variables.
 If a run fails because the credential is missing, this step has not been
