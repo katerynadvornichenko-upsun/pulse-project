@@ -111,7 +111,7 @@ def _cached_items(redis_client: Redis) -> list[FeedItemRead] | None:
 
 
 def _db_latest_items(session: Session, limit: int) -> list[FeedItemRead]:
-    """Newest items from the primary/replica DB, joined to their source name.
+    """Newest items from the database, joined to their source name.
 
     Uses the same ordering as the cache-warming job (`latest_items_order`), so
     a cold-cache response ranks exactly like a warm one."""

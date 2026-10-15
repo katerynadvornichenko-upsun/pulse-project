@@ -13,21 +13,11 @@ applications:
       postgresql:
         service: postgresql
         endpoint: postgresql
-      # Read-only replica for read-heavy work (dashboard aggregation,
-      # reporting jobs). Replication is asynchronous, so only use it for
-      # reads that tolerate a few milliseconds of staleness. CRUD reads
-      # stay on the primary to preserve read-your-writes.
-      postgresql-replica:
-        service: postgresql-replica
-        endpoint: postgresql
-      # MariaDB primary + replica. No app code consumes these yet; the
-      # relationships exist so the services are reachable over SSH and the
-      # URLs are exported by apps/api/.environment when present.
+      # MariaDB. No app code consumes it yet; the relationship exists so
+      # it's reachable over SSH and MARIADB_URL is exported by
+      # apps/api/.environment.
       mariadb:
         service: mariadb
-        endpoint: mysql
-      mariadb-replica:
-        service: mariadb-replica
         endpoint: mysql
       redis:
 
@@ -99,22 +89,6 @@ services:
           default_database: main
           privileges:
             main: admin
-        # Special endpoint name; the replica service streams through it.
-        replicator:
-          replication: true
-  # Read-only replica streaming from the primary. Must run the same
-  # PostgreSQL version as the primary. Note: the replica disk starts at
-  # 256MB and must be adjusted manually to match the primary's disk size
-  # (upsun resources:set). postgresql-replica services also support
-  # horizontal autoscaling (Console → Configure resources, or the CLI).
-  postgresql-replica:
-    type: "postgresql-replica:17"
-    configuration:
-      endpoints:
-        postgresql:
-          default_database: main
-    relationships:
-      primary: postgresql:replicator  # The name `primary` is required.
   mariadb:
     type: "mariadb:11.4"
     configuration:
@@ -125,20 +99,6 @@ services:
           default_schema: main
           privileges:
             main: admin
-        # Special endpoint name; the replica service streams through it.
-        replicator:
-          replication: true
-  # Read-only replica streaming from the MariaDB primary. Same version as
-  # the primary is required. Size its disk to match the primary
-  # (upsun resources:set).
-  mariadb-replica:
-    type: "mariadb-replica:11.4"
-    configuration:
-      endpoints:
-        mysql:
-          default_schema: main
-    relationships:
-      primary: mariadb:replicator  # The name `primary` is required.
   redis:
     type: "redis-persistent:7.2"
 

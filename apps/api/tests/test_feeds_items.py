@@ -2,8 +2,7 @@
 
 The endpoint serves the newest items from the Redis cache when warm and falls
 back to the database on a cold cache. Redis is faked in-memory here; the
-`client` fixture has no real replica, so the DB fallback runs against the same
-test engine (see conftest.py).
+DB fallback runs against the same test engine (see conftest.py).
 """
 
 import json

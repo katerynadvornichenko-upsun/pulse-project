@@ -1,9 +1,9 @@
-"""CPU burn for autoscaling tests, run inside the api container over stdin:
+"""CPU burn for load testing, run inside the api container over stdin:
 
-    upsun ssh --app api '.venv/bin/python - 4 600 DATABASE_REPLICA_URL' < scripts/db_burn.py
+    upsun ssh --app api '.venv/bin/python - 4 600 DATABASE_URL' < scripts/db_burn.py
 
 Arguments: workers, duration in seconds, env var holding the database URL
-(DATABASE_REPLICA_URL to heat the replica, DATABASE_URL for the primary).
+(defaults to DATABASE_URL).
 Each worker loops a server-side generate_series count, pinning roughly one
 core on the database. Read-only; creates no tables, writes nothing.
 """
@@ -17,7 +17,7 @@ import psycopg
 
 workers = int(sys.argv[1]) if len(sys.argv) > 1 else 4
 duration = int(sys.argv[2]) if len(sys.argv) > 2 else 600
-env_var = sys.argv[3] if len(sys.argv) > 3 else "DATABASE_REPLICA_URL"
+env_var = sys.argv[3] if len(sys.argv) > 3 else "DATABASE_URL"
 
 url = os.environ[env_var]
 deadline = time.time() + duration

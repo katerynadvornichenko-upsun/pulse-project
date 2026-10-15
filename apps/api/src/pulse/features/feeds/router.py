@@ -10,7 +10,7 @@ from pulse.features.feeds.schemas import (
     FeedSourceRead,
     FeedSourceUpdate,
 )
-from pulse.lib.db import ReadSessionDep, SessionDep
+from pulse.lib.db import SessionDep
 
 # Sources live under /feeds/sources so fetched items can take /feeds/items
 # without the bare /feeds path being ambiguous.
@@ -41,8 +41,8 @@ def delete_source(source_id: uuid.UUID, session: SessionDep) -> None:
 
 @router.get("/items", response_model=list[FeedItemRead])
 def list_items(
-    session: ReadSessionDep, limit: int = Query(default=20, ge=1, le=CACHE_LIMIT)
+    session: SessionDep, limit: int = Query(default=20, ge=1, le=CACHE_LIMIT)
 ) -> list[FeedItemRead]:
     """Newest feed items first. Served from the Redis cache when warm, falling
-    back to the read replica on a cold cache."""
+    back to the database on a cold cache."""
     return service.list_latest_items(session, limit)

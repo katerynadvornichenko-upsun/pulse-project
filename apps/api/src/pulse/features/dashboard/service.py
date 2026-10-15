@@ -1,8 +1,6 @@
 """Dashboard aggregations.
 
-These queries run on the read replica (ReadSessionDep) in production: they
-are read-only, aggregate whole tables, and tolerate a few milliseconds of
-replication lag.
+These queries are read-only and aggregate whole tables.
 """
 
 from collections.abc import Sequence
