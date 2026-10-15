@@ -211,7 +211,7 @@ export interface paths {
         /**
          * List Items
          * @description Newest feed items first. Served from the Redis cache when warm, falling
-         *     back to the read replica on a cold cache.
+         *     back to the database on a cold cache.
          */
         get: operations["list_items_api_feeds_items_get"];
         put?: never;
@@ -231,8 +231,7 @@ export interface paths {
         };
         /**
          * Stats
-         * @description Aggregated counts for the dashboard home. Served from the read
-         *     replica; may lag the primary by a few milliseconds.
+         * @description Aggregated counts for the dashboard home.
          */
         get: operations["stats_api_dashboard_stats_get"];
         put?: never;
@@ -252,7 +251,7 @@ export interface paths {
         };
         /**
          * Activity
-         * @description Recent activity events, newest first. Replica-served like /stats.
+         * @description Recent activity events, newest first.
          */
         get: operations["activity_api_dashboard_activity_get"];
         put?: never;

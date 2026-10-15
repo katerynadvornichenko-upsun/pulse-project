@@ -1,8 +1,8 @@
 """Read-heavy load generator for autoscaling tests.
 
 Seeds data through the API, then hammers the read endpoints (most of the
-load lands on /api/dashboard/stats, which runs aggregate queries on the
-PostgreSQL read replica).
+load lands on /api/dashboard/stats, which runs aggregate queries on
+PostgreSQL).
 
 Run from apps/api so httpx (a dev dependency) is available:
 
@@ -65,7 +65,7 @@ async def read_worker(
     client: httpx.AsyncClient, stop_at: float, counts: dict[str, int]
 ) -> None:
     paths = [
-        "/api/dashboard/stats",  # replica-backed aggregates: the main target
+        "/api/dashboard/stats",  # aggregate queries: the main target
         "/api/dashboard/stats",
         "/api/dashboard/stats",
         "/api/issues",

@@ -13,11 +13,7 @@ from pulse.models import ActivityEvent
 
 
 def daily_rollup_sync(session: Session) -> ActivityEvent:
-    """Snapshot the day's aggregate numbers into the activity timeline.
-
-    Runs on the primary (it writes); the read-replica guidance applies to
-    request-path reads, not to a once-a-day job.
-    """
+    """Snapshot the day's aggregate numbers into the activity timeline."""
     stats = get_stats(session)
     open_count = stats.issues_total - sum(
         stats.issues_by_status.get(status.value, 0) for status in CLOSED_STATUSES
