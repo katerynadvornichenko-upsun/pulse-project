@@ -1,4 +1,4 @@
-"""Read-heavy load generator for autoscaling tests.
+"""Read-heavy load generator for database load tests.
 
 Seeds data through the API, then hammers the read endpoints (most of the
 load lands on /api/dashboard/stats, which runs aggregate queries on
@@ -11,7 +11,7 @@ Run from apps/api so httpx (a dev dependency) is available:
     uv run python ../../scripts/loadtest.py --base-url https://<env-url> \
         --concurrency 50 --duration 600
 
-Stop any time with Ctrl+C. See docs/autoscaling-test.md for the full runbook.
+Stop any time with Ctrl+C. See docs/load-testing.md for the full runbook.
 """
 
 import argparse
