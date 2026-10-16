@@ -57,6 +57,9 @@ test("renders header, nav, and API status", async () => {
 
   expect(screen.getByText("Pulse")).toBeTruthy();
   expect(screen.getByText("Projects")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Labels" }).getAttribute("href")).toBe(
+    "/labels",
+  );
   expect(await screen.findByText(/ok \(vtest\)/)).toBeTruthy();
   expect(await screen.findByText("Nothing has happened yet.")).toBeTruthy();
 });

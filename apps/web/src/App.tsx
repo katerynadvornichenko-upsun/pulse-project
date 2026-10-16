@@ -2,6 +2,7 @@ import { NavLink, Route, Routes } from "react-router";
 
 import FeedsPage from "./pages/FeedsPage";
 import HomePage from "./pages/HomePage";
+import LabelsPage from "./pages/LabelsPage";
 import ProjectDetailPage from "./pages/ProjectDetailPage";
 import ProjectsPage from "./pages/ProjectsPage";
 
@@ -23,6 +24,9 @@ export default function App() {
           <NavLink to="/feeds" className={linkClass}>
             Feeds
           </NavLink>
+          <NavLink to="/labels" className={linkClass}>
+            Labels
+          </NavLink>
         </nav>
       </header>
       <main className="mx-auto max-w-3xl px-6 py-8">
@@ -31,6 +35,7 @@ export default function App() {
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/projects/:id" element={<ProjectDetailPage />} />
           <Route path="/feeds" element={<FeedsPage />} />
+          <Route path="/labels" element={<LabelsPage />} />
         </Routes>
       </main>
     </div>

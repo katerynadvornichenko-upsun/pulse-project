@@ -7,6 +7,9 @@ export type DashboardStats = components["schemas"]["DashboardStats"];
 export type ActivityEvent = components["schemas"]["ActivityEventRead"];
 export type Issue = components["schemas"]["IssueRead"];
 export type Label = components["schemas"]["LabelRead"];
+export type LabelCreate = components["schemas"]["LabelCreate"];
+// The generated LabelUpdate allows null, but the API rejects it: omit instead.
+export type LabelUpdate = { name?: string; color?: string };
 export type IssueStatus = components["schemas"]["IssueStatus"];
 export type IssuePriority = components["schemas"]["IssuePriority"];
 export type FeedItem = components["schemas"]["FeedItemRead"];
@@ -25,13 +28,32 @@ export const ISSUE_STATUSES: IssueStatus[] = [
 ];
 export const ISSUE_PRIORITIES: IssuePriority[] = ["low", "medium", "high", "urgent"];
 
+/** Error thrown for non-2xx responses; carries the HTTP status. */
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+/** True when `err` is an API 409 Conflict (e.g. a duplicate unique name). */
+export function isConflict(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     headers: { "Content-Type": "application/json" },
     ...init,
   });
   if (!res.ok) {
-    throw new Error(`${init?.method ?? "GET"} ${path} failed with ${res.status}`);
+    throw new ApiError(
+      `${init?.method ?? "GET"} ${path} failed with ${res.status}`,
+      res.status,
+    );
   }
   return res.status === 204 ? (undefined as T) : ((await res.json()) as T);
 }
@@ -84,6 +106,17 @@ export const api = {
       request<Project>("/api/projects", { method: "POST", body: JSON.stringify(data) }),
     delete: (id: string) =>
       request<void>(`/api/projects/${id}`, { method: "DELETE" }),
+  },
+  labels: {
+    list: () => request<Label[]>("/api/labels"),
+    create: (data: LabelCreate) =>
+      request<Label>("/api/labels", { method: "POST", body: JSON.stringify(data) }),
+    update: (id: string, data: LabelUpdate) =>
+      request<Label>(`/api/labels/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(data),
+      }),
+    delete: (id: string) => request<void>(`/api/labels/${id}`, { method: "DELETE" }),
   },
   issues: {
     list: (filters: IssueFilters = {}) =>
