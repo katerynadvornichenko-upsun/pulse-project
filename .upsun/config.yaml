@@ -52,7 +52,7 @@ applications:
           start: ".venv/bin/python -m pulse.jobs.enqueue_rollup"
 
   web:
-    type: "nodejs:24"
+    type: "nodejs:20"
     source:
       root: apps/web
 
